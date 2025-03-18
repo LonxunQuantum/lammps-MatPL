@@ -4,7 +4,7 @@
 
 #ifdef PAIR_CLASS
 // clang-format off
-PairStyle(pwmlff, PairPWMLFF);
+PairStyle(matpl, PairMATPL);
 // clang-format on
 #else
 
@@ -14,15 +14,15 @@ PairStyle(pwmlff, PairPWMLFF);
 #define LMP_PAIR_MLFF_H
 #include "nep_cpu.h"
 #ifdef USE_CUDA
-#include "PWMLFF/NEP_GPU/force/nep3.cuh"
+#include "MATPL/NEP_GPU/force/nep3.cuh"
 #endif
 #include "pair.h"
 #include <iostream>
 namespace LAMMPS_NS {
-    class PairPWMLFF : public Pair {
+    class PairMATPL : public Pair {
         public:
-            PairPWMLFF(class LAMMPS *);
-            ~PairPWMLFF() override;
+            PairMATPL(class LAMMPS *);
+            ~PairMATPL() override;
 
             int nmax;
             double*** f_n;
@@ -65,7 +65,7 @@ namespace LAMMPS_NS {
             std::vector<double> max_err_list;
             std::vector<double> max_err_ei_list;
             std::string explrError_fname = "explr.error";
-            std::FILE *explrError_fp;
+            std::FILE *explrError_fp = nullptr;
             int out_freq = 1;
 
             std::vector<int> atom_types;           // use for jit models

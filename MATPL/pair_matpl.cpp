@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
-#include "pair_pwmlff.h"
+#include "pair_matpl.h"
 #include "nep_cpu.h"
 #include "atom.h"
 #include "comm.h"
@@ -25,7 +25,7 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-PairPWMLFF::PairPWMLFF(LAMMPS *lmp) : Pair(lmp)
+PairMATPL::PairMATPL(LAMMPS *lmp) : Pair(lmp)
 {
     me = comm->me;
 	writedata = 1;
@@ -39,7 +39,7 @@ PairPWMLFF::PairPWMLFF(LAMMPS *lmp) : Pair(lmp)
 
 }
 
-PairPWMLFF::~PairPWMLFF()
+PairMATPL::~PairMATPL()
 {
     // if (copymode)
     //     return;
@@ -52,8 +52,9 @@ PairPWMLFF::~PairPWMLFF()
         memory->destroy(e_atom_n);
     }
 
-    if (me == 0) {
+    if (me == 0 && explrError_fp != nullptr) {
         fclose(explrError_fp);
+        explrError_fp = nullptr;
     }
 
 }
@@ -62,7 +63,7 @@ PairPWMLFF::~PairPWMLFF()
    allocate all arrays
 ------------------------------------------------------------------------- */
 
-void PairPWMLFF::allocate()
+void PairMATPL::allocate()
 {
     allocated = 1;
     int np1 = atom->ntypes ;
@@ -77,10 +78,10 @@ void PairPWMLFF::allocate()
    global settings pair_style 
 ------------------------------------------------------------------------- */
 
-void PairPWMLFF::settings(int narg, char** arg)
+void PairMATPL::settings(int narg, char** arg)
 {
     int ff_idx;
-    int iarg = 1;  // index of arg after 'num_ff'
+    int iarg = 0;  // index of first forcefield file
     int rank;
     int num_devices = 0;
 
@@ -90,13 +91,19 @@ void PairPWMLFF::settings(int narg, char** arg)
     #else
         num_devices = 0;
     #endif
-    if (narg <= 0) error->all(FLERR, "Illegal pair_style command"); // numbers of args after 'pair_style pwmlff'
+    if (narg <= 0) error->all(FLERR, "Illegal pair_style command"); // numbers of args after 'pair_style matpl'
     std::vector<std::string> models;
 
-    num_ff = utils::inumeric(FLERR, arg[0], false, lmp);    // number of models
-
-    for (int ii = 0; ii < num_ff; ++ii) {
-        models.push_back(arg[iarg++]);                          // model files
+    num_ff = 0;
+    while (iarg < narg) {
+        std::string arg_str(arg[iarg]);
+        if (arg_str.find(".txt") != std::string::npos) {
+            models.push_back(arg_str);
+            num_ff++;
+            iarg++;
+        } else {
+            break;
+        }
     }
     while (iarg < narg) {
         if (strcmp(arg[iarg], "out_freq") == 0) {
@@ -107,8 +114,12 @@ void PairPWMLFF::settings(int narg, char** arg)
         iarg++;
     }
 
-    if (me == 0) {
+    if (me == 0 and num_ff > 1) {
         explrError_fp = fopen(&explrError_fname[0], "w");
+        fprintf(explrError_fp, "%9s %16s %16s %16s %16s %16s %16s\n", 
+        "#    step", "avg_devi_f", "min_devi_f", "max_devi_f", 
+        "avg_devi_e", "min_devi_e", "max_devi_e");
+        fflush(explrError_fp);
     }
 
     if (me == 0) utils::logmesg(this -> lmp, "<---- Loading model ---->");
@@ -168,15 +179,15 @@ void PairPWMLFF::settings(int narg, char** arg)
     }
     // since we need num_ff, so well allocate memory here
     // but not in allocate()
-    memory->create(f_n, num_ff, atom->nmax, 3, "pair_pwmlff:f_n");
-    memory->create(e_atom_n, num_ff, atom->natoms, "pair_pwmlff:e_atom_n");
+    memory->create(f_n, num_ff, atom->nmax, 3, "pair_matpl:f_n");
+    memory->create(e_atom_n, num_ff, atom->natoms, "pair_matpl:e_atom_n");
 } 
 
 /* ----------------------------------------------------------------------
    set coeffs for one or more type pairs pair_coeff 
 ------------------------------------------------------------------------- */
 
-void PairPWMLFF::coeff(int narg, char** arg)
+void PairMATPL::coeff(int narg, char** arg)
 {
     int ntypes = atom->ntypes;
     if (!allocated) { allocate(); }
@@ -257,7 +268,7 @@ void PairPWMLFF::coeff(int narg, char** arg)
    init for one type pair i,j and corresponding j,i
 ------------------------------------------------------------------------- */
 
-double PairPWMLFF::init_one(int i, int j)
+double PairMATPL::init_one(int i, int j)
 {
     //if (setflag[i][j] == 0) { error->all(FLERR, "All pair coeffs are not set"); 
 
@@ -265,9 +276,9 @@ double PairPWMLFF::init_one(int i, int j)
 }
 
 
-void PairPWMLFF::init_style()
+void PairMATPL::init_style()
 {
-    if (force->newton_pair == 0) error->all(FLERR, "Pair style PWMLFF requires newton pair on");
+    if (force->newton_pair == 0) error->all(FLERR, "Pair style MATPL requires newton pair on");
     // Using a nearest neighbor table of type full
     neighbor->add_request(this, NeighConst::REQ_FULL);
 
@@ -279,7 +290,7 @@ void PairPWMLFF::init_style()
 }
 /* ---------------------------------------------------------------------- */
 
-std::tuple<double, double, double, double, double, double> PairPWMLFF::calc_max_error(double ***f_n, double **e_atom_n)
+std::tuple<double, double, double, double, double, double> PairMATPL::calc_max_error(double ***f_n, double **e_atom_n)
 {
     int i, j;
     int ff_idx;
@@ -380,7 +391,7 @@ std::tuple<double, double, double, double, double, double> PairPWMLFF::calc_max_
 
 }
 
-int PairPWMLFF::pack_reverse_comm(int n, int first, double* buf) {
+int PairMATPL::pack_reverse_comm(int n, int first, double* buf) {
     int i, m, last;
 
     m = 0;
@@ -393,7 +404,7 @@ int PairPWMLFF::pack_reverse_comm(int n, int first, double* buf) {
     return m;
 }
 
-void PairPWMLFF::unpack_reverse_comm(int n, int* list, double* buf) {
+void PairMATPL::unpack_reverse_comm(int n, int* list, double* buf) {
     int i, j, m;
 
     m = 0;
@@ -406,17 +417,17 @@ void PairPWMLFF::unpack_reverse_comm(int n, int* list, double* buf) {
 
 }
 
-void PairPWMLFF::grow_memory()
+void PairMATPL::grow_memory()
 {
   if (atom->nmax > nmax) {
     printf("@@@ allocate new %7d %7d %7d\n", update->ntimestep, nmax, atom->nmax);
     nmax = atom->nmax;
-    memory->grow(f_n, num_ff, nmax, 3, "pair_pwmlff:f_n");
-    memory->grow(e_atom_n, num_ff, nmax, "pair_pwmlff:e_atom_n");
+    memory->grow(f_n, num_ff, nmax, 3, "pair_matpl:f_n");
+    memory->grow(e_atom_n, num_ff, nmax, "pair_matpl:e_atom_n");
   }
 }
 
-std::tuple<std::vector<int>, std::vector<int>, std::vector<double>>PairPWMLFF::convert_dim(bool is_build_neighbor){
+std::tuple<std::vector<int>, std::vector<int>, std::vector<double>>PairMATPL::convert_dim(bool is_build_neighbor){
     int nlocal = atom->nlocal;
     int nghost = atom->nghost; 
     int n_all = nlocal + nghost;
@@ -454,7 +465,7 @@ std::tuple<std::vector<int>, std::vector<int>, std::vector<double>>PairPWMLFF::c
     return std::make_tuple(std::move(itype_convert_map), std::move(firstneighbor_cpu), std::move(position_cpu));
 }
 
-void PairPWMLFF::compute(int eflag, int vflag)
+void PairMATPL::compute(int eflag, int vflag)
 {
     if (eflag || vflag) ev_setup(eflag, vflag);
 

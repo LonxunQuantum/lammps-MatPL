@@ -2745,7 +2745,7 @@ void NEP3_CPU::init_from_file(const std::string& potential_filename, const bool 
   } else if (neplinenums == tmp) {
     is_gpumd_nep = false;
     if (is_rank_0) {
-      printf("    the input nep potential file is from PWMLFF.\n");
+      printf("    the input nep potential file is from MATPL.\n");
     }
   } else if (neplinenums  == (tmp -paramb.num_types + 1)) {
     is_gpumd_nep = true;
@@ -2753,7 +2753,7 @@ void NEP3_CPU::init_from_file(const std::string& potential_filename, const bool 
       printf("    the input nep potential file is from GPUMD.\n");
     }
   } else {
-    printf("    parameter parsing error, the number of nep parameters [PWMLFF %d, GPUMD %d] does not match the text lines %d.\n", tmp, (tmp-paramb.num_types+1), neplinenums);
+    printf("    parameter parsing error, the number of nep parameters [MATPL %d, GPUMD %d] does not match the text lines %d.\n", tmp, (tmp-paramb.num_types+1), neplinenums);
     exit(1);
   }
 
@@ -2852,7 +2852,7 @@ void NEP3_CPU::init_from_file(const std::string& potential_filename, const bool 
       std::cout << "    total number of parameters = " << annmb.num_para - paramb.num_types + 1 << ".\n";
 
     } else {
-      std::cout << "    the input nep potential file is from PWMLFF.\n";
+      std::cout << "    the input nep potential file is from MATPL.\n";
     
       std::cout << "    number of neural network parameters = "
                 << annmb.num_para - num_para_descriptor << ".\n";
