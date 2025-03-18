@@ -5,7 +5,7 @@ List of modified records by Wu Xingxing (email stars_sparkling@163.com)
     Modified the applyann_one_layer method;
 2. Added handling of inconsistency between the atomic order of the input structure of LAMMPS and the atomic order in the force field
 3. In order to adapt to multiple model biases, the function has been added with computefor_lamps() and the int model_index parameter has been added  
-4. Support GPUMD NEP shared bias and PWMLFF NEP independent bias forcefield
+4. Support GPUMD NEP shared bias and MATPL NEP independent bias forcefield
 
 We have made the following improvements based on NEP4
 http://doc.lonxun.com/PWMLFF/models/nep/NEP%20model/
