@@ -1,0 +1,14 @@
+{
+    "files.associations": {
+        "adc.h": "c",
+        "array": "cpp",
+        "functional": "cpp",
+        "tuple": "cpp",
+        "type_traits": "cpp",
+        "utility": "cpp",
+        "bitset": "cpp",
+        "initializer_list": "cpp",
+        "cmath": "cpp",
+        "vector": "cpp"
+    }
+}
