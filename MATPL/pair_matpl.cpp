@@ -260,9 +260,6 @@ void PairMATPL::settings(int narg, char** arg)
 
 void PairMATPL::coeff(int narg, char** arg)
 {
-    for (int i = 0; i < narg; i++) {
-        printf("======= arg[%d]: %s\n", i, arg[i]);
-    }
     int ntypes = atom->ntypes;
     if (!allocated) { allocate(); }
 
@@ -304,16 +301,12 @@ void PairMATPL::coeff(int narg, char** arg)
     } else if (model_type == 1) {
         std::vector<int> atom_type_module = nep_cpu_models[0].element_atomic_number_list;
         model_ntypes = atom_type_module.size();
-        for (int iii = 0; iii < model_ntypes; iii++) {
-            printf("the nep ff type %d = %d\n", iii, atom_type_module[iii]);
-        }
         if (ntypes > model_ntypes || ntypes != narg - 2)  // type numbers in strucutre file and in pair_coeff should be the same
         {
             error->all(FLERR, "Element mapping is not correct, ntypes = " + std::to_string(ntypes));
         }
         for (int ii = 2; ii < narg; ++ii) {
             int temp = std::stoi(arg[ii]);
-            printf("the input type %d\n", temp);
             auto iter = std::find(atom_type_module.begin(), atom_type_module.end(), temp);   
             if (iter != atom_type_module.end() || arg[ii] == 0)
             {
