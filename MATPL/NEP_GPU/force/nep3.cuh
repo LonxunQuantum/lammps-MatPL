@@ -101,6 +101,7 @@ public:
     int dim = 0;                 // dimension of the descriptor
     int num_neurons1 = 0;        // number of neurons in the 1st hidden layer
     int num_para = 0;            // number of parameters
+    int num_para_ann = 0;
     int num_c2 = 0;
     int num_c3 = 0;
     const float* w0[PARAM_SIZE]; // weight from the input layer to the hidden layer
