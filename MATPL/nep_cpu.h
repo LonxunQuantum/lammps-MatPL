@@ -68,6 +68,7 @@ public:
     int dim = 0;
     int num_neurons1 = 0;
     int num_para = 0;
+    int num_para_ann = 0;
     int num_c2 = 0;
     int num_c3 = 0;
     const double* w0[103];

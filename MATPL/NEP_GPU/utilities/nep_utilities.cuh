@@ -32,7 +32,7 @@ __constant__ float C4B[5] = {
 __constant__ float C5B[3] = {0.026596810706114f, 0.053193621412227f, 0.026596810706114f};
 
 const int SIZE_BOX_AND_INVERSE_BOX = 18; // (3 * 3) * 2
-const int MAX_NUM_N = 40;                // n_max+1 = 19+1
+const int MAX_NUM_N = 20;                // n_max+1 = 19+1
 const int MAX_DIM = MAX_NUM_N * 7;
 const int MAX_DIM_ANGULAR = MAX_NUM_N * 6;
 
@@ -63,6 +63,35 @@ static __device__ void apply_ann_one_layer(
   }
   energy -= b1[atom_type];
 }
+
+static __device__ void apply_ann_one_layer_nep5(
+  const int N_des,
+  const int N_neu,
+  const float* w0,
+  const float* b0,
+  const float* w1,
+  const float* b1,
+  float* q,
+  float& energy,
+  float* energy_derivative,
+  const int atom_type)
+{
+  for (int n = 0; n < N_neu; ++n) {
+    float w0_times_q = 0.0f;
+    for (int d = 0; d < N_des; ++d) {
+      w0_times_q += w0[n * N_des + d] * q[d];
+    }
+    float x1 = tanh(w0_times_q - b0[n]);
+    float tanh_der = 1.0f - x1 * x1;
+    energy += w1[n] * x1;
+    for (int d = 0; d < N_des; ++d) {
+      float y1 = tanh_der * w0[n * N_des + d];
+      energy_derivative[d] += w1[n] * y1;
+    }
+  }
+  energy -= w1[N_neu] + b1[0]; // typewise bias + common bias
+}
+
 
 static __device__ __forceinline__ void find_fc(float rc, float rcinv, float d12, float& fc)
 {

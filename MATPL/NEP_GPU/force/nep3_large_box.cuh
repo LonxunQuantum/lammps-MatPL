@@ -263,9 +263,14 @@ static __global__ void find_descriptor_large_box(
     //     Fp[d] = 0.0f;
     //   }
     // }
+    if (paramb.version == 4) {
+      apply_ann_one_layer(
+        annmb.dim, annmb.num_neurons1, annmb.w0[t1], annmb.b0[t1], annmb.w1[t1], annmb.b1, q, F, Fp, t1);
+    }else if(paramb.version == 5) {
+      apply_ann_one_layer_nep5(
+        annmb.dim, annmb.num_neurons1, annmb.w0[t1], annmb.b0[t1], annmb.w1[t1], annmb.b1, q, F, Fp, t1);    
+    }
 
-    apply_ann_one_layer(
-      annmb.dim, annmb.num_neurons1, annmb.w0[t1], annmb.b0[t1], annmb.w1[t1], annmb.b1, q, F, Fp, t1);
     g_pe[n1] += F;
     for (int d = 0; d < annmb.dim; ++d) {
       g_Fp[d * nlocal + n1] = Fp[d] * paramb.q_scaler[d];

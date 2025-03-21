@@ -149,6 +149,14 @@ void NEP3::init_from_file(const char* file_potential, const bool is_rank_0, cons
   } else if (tokens[0] == "nep4_polarizability") {
     paramb.version = 4;
     paramb.model_type = 2;
+  } else if (tokens[0] == "nep5") {
+    paramb.model_type = 0;
+    paramb.version = 5;
+    zbl.enabled = false;
+  } else if (tokens[0] == "nep5_zbl") {
+    paramb.model_type = 0;
+    paramb.version = 5;
+    zbl.enabled = true;
   }
   paramb.num_types = get_int_from_token(tokens[1], __FILE__, __LINE__);
   if (tokens.size() != 2 + paramb.num_types) {
@@ -313,16 +321,23 @@ void NEP3::init_from_file(const char* file_potential, const bool is_rank_0, cons
     printf("    ANN = %d-%d-1.\n", annmb.dim, annmb.num_neurons1);
   }
   // calculated parameters:
-  // rc = paramb.rc_radial; // largest cutoff
   paramb.rcinv_radial = 1.0f / paramb.rc_radial;
   paramb.rcinv_angular = 1.0f / paramb.rc_angular;
   paramb.num_types_sq = paramb.num_types * paramb.num_types;
 
   annmb.num_c2   = paramb.num_types_sq * (paramb.n_max_radial + 1) * (paramb.basis_size_radial + 1);
   annmb.num_c3   = paramb.num_types_sq * (paramb.n_max_angular + 1) * (paramb.basis_size_angular + 1);
-  int tmp_nn_params = (annmb.dim + 2) * annmb.num_neurons1 * (paramb.version == 4 ? paramb.num_types : 1);// no last bias
-  int tmp = tmp_nn_params + paramb.num_types + annmb.num_c2 + annmb.num_c3 + 6 + annmb.dim;
   
+  if (paramb.version == 3) {
+    annmb.num_para_ann = (annmb.dim + 2) * annmb.num_neurons1 + 1;
+  } else if (paramb.version == 4) {
+    annmb.num_para_ann = (annmb.dim + 2) * annmb.num_neurons1 * paramb.num_types;
+  } else{
+    annmb.num_para_ann = ((annmb.dim + 2) * annmb.num_neurons1 + 1) * paramb.num_types + 1;
+  }
+  int tmp = 0;
+  tmp = annmb.num_para_ann + annmb.num_c2 + annmb.num_c3 + 6 + annmb.dim;
+
   int num_type_zbl = 0;
   if (zbl.enabled && zbl.flexibled) {
     num_type_zbl = (paramb.num_types * (paramb.num_types + 1)) / 2;
@@ -333,22 +348,24 @@ void NEP3::init_from_file(const char* file_potential, const bool is_rank_0, cons
 
   if (paramb.num_types == 1) {
     is_gpumd_nep = false;
-  } else if (neplinenums == tmp) {
-    is_gpumd_nep = false;
-    if (print_potential_info) {
-      printf("    the input nep potential file is from MATPL.\n");
-    }
-  } else if (neplinenums  == (tmp -paramb.num_types + 1)) {
-    is_gpumd_nep = true;
-    if (print_potential_info) {
-      printf("    the input nep potential file is from GPUMD.\n");
-    }
-  } else {
-    printf("    parameter parsing error, the number of nep parameters [MATPL %d, GPUMD %d] does not match the text lines %d.\n", tmp, (tmp-paramb.num_types+1), neplinenums);
+  } else if (paramb.version == 4) {
+    if (neplinenums  == (tmp - paramb.num_types + 1)) {
+      is_gpumd_nep = true;
+      printf("    the input nep4 potential file is from GPUMD.\n");
+    } else if (neplinenums  == (tmp + paramb.num_types)) {
+          printf("    the input nep4 potential file is from MatPL.\n");
+    } else {
+    printf("    parameter parsing error, the number of nep parameters [MatPL %d, GPUMD %d] does not match the text lines %d.\n", tmp, (tmp-paramb.num_types+1), neplinenums);
     exit(1);
+    }
   }
 
-  annmb.num_para = tmp_nn_params + (paramb.version == 4 ? paramb.num_types : 1);
+  if (paramb.version == 4 ){
+    annmb.num_para = annmb.num_para_ann + paramb.num_types;
+  } else {
+    annmb.num_para = annmb.num_para_ann;
+  }
+  
   if (print_potential_info) {
     printf("    number of neural network parameters = %d.\n", is_gpumd_nep == false ? annmb.num_para : annmb.num_para-paramb.num_types+1);
   }
@@ -368,10 +385,10 @@ void NEP3::init_from_file(const char* file_potential, const bool is_rank_0, cons
   // NN and descriptor parameters
   std::vector<float> parameters(annmb.num_para);
   for (int n = 0; n < annmb.num_para; ++n) {
-    if (is_gpumd_nep == true && (n >= tmp_nn_params + 1) && (n < tmp_nn_params + paramb.num_types)) {
-      parameters[n] = parameters[tmp_nn_params];
+    if (is_gpumd_nep == true && (n >= annmb.num_para_ann + 1) && (n < annmb.num_para_ann + paramb.num_types)) {
+      parameters[n] = parameters[annmb.num_para_ann];
       if (print_potential_info) {
-        printf("copy the last bias parameters[%d]=%f to parameters[%d]=%f \n", tmp_nn_params, parameters[tmp_nn_params], n, parameters[n]);
+        printf("    copy the last bias parameters[%d]=%f to parameters[%d]=%f \n", annmb.num_para_ann, parameters[annmb.num_para_ann], n, parameters[n]);
       }
     } else {
       tokens = get_tokens(input);
@@ -467,7 +484,7 @@ void NEP3::update_potential(float* parameters, ANN& ann)
 {
   float* pointer = parameters;
   for (int t = 0; t < paramb.num_types; ++t) {
-    if (t > 0 && paramb.version != 4) { // Use the same set of NN parameters for NEP2 and NEP3
+    if (t > 0 && paramb.version == 3) { // Use the same set of NN parameters for NEP2 and NEP3_CPU
       pointer -= (ann.dim + 2) * ann.num_neurons1;
     }
     ann.w0[t] = pointer;
@@ -476,6 +493,9 @@ void NEP3::update_potential(float* parameters, ANN& ann)
     pointer += ann.num_neurons1;
     ann.w1[t] = pointer;
     pointer += ann.num_neurons1;
+    if (paramb.version == 5) {
+      pointer += 1; // one extra bias for NEP5 stored in ann.w1[t]
+    }
   }
   ann.b1 = pointer;
   // pointer += 1;

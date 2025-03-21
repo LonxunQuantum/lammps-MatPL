@@ -18,6 +18,8 @@ box              tilt large
 if "${restart} > 0" then "read_restart lmps.restart.*" else "read_data lmp.config"
 change_box       all triclinic
 
+# replicate        10 10 10
+
 mass   1    178.49
 mass   2    15.999
 pair_style   matpl nep_to_lmps.txt 
