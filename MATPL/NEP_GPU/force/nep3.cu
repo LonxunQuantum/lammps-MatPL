@@ -349,13 +349,13 @@ void NEP3::init_from_file(const char* file_potential, const bool is_rank_0, cons
   if (paramb.num_types == 1) {
     is_gpumd_nep = false;
   } else if (paramb.version == 4) {
-    if (neplinenums  == (tmp - paramb.num_types + 1)) {
+    if (neplinenums  == (tmp + 1)) {
       is_gpumd_nep = true;
       printf("    the input nep4 potential file is from GPUMD.\n");
     } else if (neplinenums  == (tmp + paramb.num_types)) {
           printf("    the input nep4 potential file is from MatPL.\n");
     } else {
-    printf("    parameter parsing error, the number of nep parameters [MatPL %d, GPUMD %d] does not match the text lines %d.\n", tmp, (tmp-paramb.num_types+1), neplinenums);
+    printf("    parameter parsing error, the number of nep parameters [MatPL %d, GPUMD %d] does not match the text lines %d.\n", tmp+paramb.num_types, (tmp+1), neplinenums);
     exit(1);
     }
   }

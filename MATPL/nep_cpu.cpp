@@ -2799,7 +2799,7 @@ void NEP3_CPU::init_from_file(const std::string& potential_filename, const bool 
   if (paramb.num_types == 1) {
     is_gpumd_nep = false;
   } else if (paramb.version == 4) {
-    if (neplinenums  == (tmp - paramb.num_types + 1)) {
+    if (neplinenums  == (tmp + 1)) {
       is_gpumd_nep = true;
       if (is_rank_0) {
         printf("    the input nep4 potential file is from GPUMD.\n");
