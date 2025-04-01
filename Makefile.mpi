@@ -154,6 +154,7 @@ $(EXE): main.o $(LMPLIB) $(EXTRA_LINK_DEPENDS)
 	@echo "export PATH=$(abspath ..):\$$PATH" > ../../env.sh
 	@echo "export LD_LIBRARY_PATH=\$$LD_LIBRARY_PATH:$(abspath ..)" >> ../../env.sh
 	@echo "export LAMMPS_POTENTIALS=$(abspath ../../potentials)" >> ../../env.sh
+	@echo "export PYTHONPATH=$(abspath ../../python):\$$PYTHONPATH" >> ../../env.sh
 	@echo "LAMMPS has been successfully compiled. Please load the LAMMPS environment variables before use."
 	@echo "You can load the environment variables by running (recommended):"
 	@echo ""
@@ -163,6 +164,7 @@ $(EXE): main.o $(LMPLIB) $(EXTRA_LINK_DEPENDS)
 	@echo "    export PATH=$(abspath ..):\$$PATH"
 	@echo "    export LD_LIBRARY_PATH=\$$LD_LIBRARY_PATH:$(abspath ..)"
 	@echo "    export LAMMPS_POTENTIALS=$(abspath ../../potentials)"
+	@echo "    export PYTHONPATH=$(abspath ../../python):\$$PYTHONPATH"
 	@echo "==========================="
 # Library targets
 
