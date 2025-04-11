@@ -250,6 +250,7 @@ void PairMATPL::settings(int narg, char** arg)
     }
     // since we need num_ff, so well allocate memory here
     // but not in allocate()
+    nmax = atom->nmax;
     memory->create(f_n, num_ff, atom->nmax, 3, "pair_matpl:f_n");
     memory->create(e_atom_n, num_ff, atom->natoms, "pair_matpl:e_atom_n");
 } 
@@ -509,11 +510,11 @@ void PairMATPL::unpack_reverse_comm(int n, int* list, double* buf) {
 
 }
 
-void PairMATPL::grow_memory()
+void PairMATPL::grow_memory(int nall)
 {
-  if (atom->nmax > nmax) {
-    printf("@@@ allocate new %7d %7d %7d\n", update->ntimestep, nmax, atom->nmax);
-    nmax = atom->nmax;
+  if (nmax < nall) {
+    // printf("allocate new %7d %7d %7d\n", update->ntimestep, nmax, nall);
+    nmax = nall;
     memory->grow(f_n, num_ff, nmax, 3, "pair_matpl:f_n");
     memory->grow(e_atom_n, num_ff, nmax, "pair_matpl:e_atom_n");
   }
@@ -876,7 +877,9 @@ void PairMATPL::compute(int eflag, int vflag)
     int nghost = atom->nghost;
     int n_all = nlocal + nghost;
     // int inum, jnum, itype, jtype;
-
+    if (num_ff > 1) {
+        grow_memory(n_all);
+    }
     bool is_build_neighbor = false;
     double max_err, global_max_err, max_err_ei, global_max_err_ei;
     double min_err, global_min_err, min_err_ei, global_min_err_ei;

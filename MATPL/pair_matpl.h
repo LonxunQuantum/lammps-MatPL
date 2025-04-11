@@ -42,7 +42,7 @@ namespace LAMMPS_NS {
             void init_style() override;
             int pack_reverse_comm(int, int, double* ) override;
             void unpack_reverse_comm(int, int*, double* ) override;
-            void grow_memory();
+            void grow_memory(int nall);
             std::tuple<double, double, double, double, double, double> calc_max_error(double***, double**);
 
         protected:
