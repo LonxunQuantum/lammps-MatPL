@@ -179,6 +179,8 @@ void PairMATPL::settings(int narg, char** arg)
     }
     // since we need num_ff, so well allocate memory here
     // but not in allocate()
+    // printf("========allocate f_n[ %d %d 3 ]=========\n", num_ff, atom->nmax);
+    nmax = atom->nmax;
     memory->create(f_n, num_ff, atom->nmax, 3, "pair_matpl:f_n");
     memory->create(e_atom_n, num_ff, atom->natoms, "pair_matpl:e_atom_n");
 } 
@@ -417,11 +419,11 @@ void PairMATPL::unpack_reverse_comm(int n, int* list, double* buf) {
 
 }
 
-void PairMATPL::grow_memory()
+void PairMATPL::grow_memory(int nall)
 {
-  if (atom->nmax > nmax) {
-    printf("@@@ allocate new %7d %7d %7d\n", update->ntimestep, nmax, atom->nmax);
-    nmax = atom->nmax;
+  if (nmax < nall) {
+    // printf("allocate new %7d %7d %7d\n", update->ntimestep, nmax, nall);
+    nmax = nall;
     memory->grow(f_n, num_ff, nmax, 3, "pair_matpl:f_n");
     memory->grow(e_atom_n, num_ff, nmax, "pair_matpl:e_atom_n");
   }
@@ -513,6 +515,8 @@ void PairMATPL::compute(int eflag, int vflag)
         }
     }
     else if (model_type == 1 and num_ff > 1){
+        // printf("namx %d atom->nmax %d nall %d\n", nmax, atom->nmax, n_all);
+        grow_memory(n_all);
         if (cvflag_atom) {
             per_atom_virial = cvatom;
         }
@@ -539,6 +543,7 @@ void PairMATPL::compute(int eflag, int vflag)
             double total_virial[6] = {0.0};
             // for multi models, the output step, should calculate deviation
             for (int i = 0; i < n_all; i++) {
+                // printf(" ==== ff_idx %d atom %d num_ff %d n_all %d====\n", ff_idx, i, num_ff, n_all);
                 f_n[ff_idx][i][0] = 0.0;
                 f_n[ff_idx][i][1] = 0.0;
                 f_n[ff_idx][i][2] = 0.0;
