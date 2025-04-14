@@ -211,10 +211,10 @@ void PairMATPL::coeff(int narg, char** arg)
     if (model_type == 1) {
         std::vector<int> atom_type_module = nep_cpu_models[0].element_atomic_number_list;
         model_ntypes = atom_type_module.size();
-        if (ntypes > model_ntypes || ntypes != narg - 2)  // type numbers in strucutre file and in pair_coeff should be the same
-        {
-            error->all(FLERR, "Element mapping is not correct, ntypes = " + std::to_string(ntypes));
-        }
+        // if (ntypes > model_ntypes || ntypes != narg - 2)  // type numbers in strucutre file and in pair_coeff should be the same
+        // {
+        //     error->all(FLERR, "Element mapping is not correct, ntypes = " + std::to_string(ntypes));
+        // }
         for (int ii = 2; ii < narg; ++ii) {
             int temp = std::stoi(arg[ii]);
             auto iter = std::find(atom_type_module.begin(), atom_type_module.end(), temp);   
@@ -239,10 +239,10 @@ void PairMATPL::coeff(int narg, char** arg)
         #ifdef USE_CUDA
         std::vector<int> atom_type_module = nep_gpu_models[0].element_atomic_number_list;
         model_ntypes = atom_type_module.size();
-        if (ntypes > model_ntypes || ntypes != narg - 2)  // type numbers in strucutre file and in pair_coeff should be the same
-        {
-            error->all(FLERR, "Element mapping is not correct, ntypes = " + std::to_string(ntypes));
-        }
+        // if (ntypes > model_ntypes || ntypes != narg - 2)  // type numbers in strucutre file and in pair_coeff should be the same
+        // {
+        //     error->all(FLERR, "Element mapping is not correct, ntypes = " + std::to_string(ntypes));
+        // }
         for (int ii = 2; ii < narg; ++ii) {
             int temp = std::stoi(arg[ii]);
             auto iter = std::find(atom_type_module.begin(), atom_type_module.end(), temp);   
