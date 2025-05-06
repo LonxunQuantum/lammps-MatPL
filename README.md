@@ -79,6 +79,7 @@ make yes-MATPL
 # make yes-RIGID
 # make yes-MEAM
 # make yes-MC
+# make yes-SHOCK
 make clean-all && make mpi
 ```
 
