@@ -78,6 +78,7 @@ make yes-REPLICA
 make yes-RIGID
 make yes-MEAM
 make yes-MC
+make yes-SHOCK
 # 开始编译
 make clean-all
 make mpi -j4 mode=shared # 这里4为并行编译数量，shared为编译出一个共享库文件，可以用于python相关操作中
