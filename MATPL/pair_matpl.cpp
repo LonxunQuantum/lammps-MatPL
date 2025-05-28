@@ -393,15 +393,20 @@ std::tuple<double, double, double, double, double, double> PairMATPL::calc_max_e
     double num_ff_inv;
     int nlocal = atom->nlocal;
     // int *tag = atom->tag;
-    min_err = INFINITY;
-    min_err_ei = INFINITY;
-    max_err = -1.0;
-    max_err_ei = -1.0;
+    if (nlocal > 0) {
+        min_err = 1000;
+        min_err_ei = 1000;
+    } else { // no atoms in this block
+        min_err = 0.0;
+        min_err_ei = 0.0;
+    }
+    max_err = 0.0;
+    max_err_ei = 0.0;
     num_ff_inv = 1.0 / num_ff;
 
-    max_mean_err_out = -1.0;
+    max_mean_err_out = 0.0;
     max_mean_err = 0.0;
-    max_mean_err_out = -1.0;
+    max_mean_err_out = 0.0;
     max_mean_ei = 0.0;
 
     for (ff_idx = 0; ff_idx < num_ff; ff_idx++) {
@@ -1316,8 +1321,8 @@ void PairMATPL::compute(int eflag, int vflag)
             if (me == 0) {
                 // fprintf(explrError_fp, "%9d %16.9f %16.9f\n", (max_err_list.size()-1)*out_freq, global_max_err, global_max_err_ei);
                 fprintf(explrError_fp, "%9d %16.9f %16.9f %16.9f %16.9f %16.9f %16.9f\n", 
-                            current_timestep, max_mean_err_out, min_err, max_err, 
-                                max_mean_ei_out, min_err_ei, max_err_ei);
+                            current_timestep, global_max_mean_err, global_min_err, global_max_err, 
+                                global_max_mean_err_ei, global_min_err_ei, global_max_err_ei);
                 fflush(explrError_fp);
             } 
         }
