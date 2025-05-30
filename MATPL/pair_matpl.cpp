@@ -1145,20 +1145,22 @@ void PairMATPL::compute(int eflag, int vflag)
         // auto duration_convert_dim = std::chrono::duration_cast<std::chrono::microseconds>(end_convert_dim - start_convert_dim).count();
         
         // auto start_compute_large_box_optim = std::chrono::high_resolution_clock::now();
-        nep_gpu_models[0].compute_large_box_optim(
-        is_build_neighbor,
-        n_all, 
-        atom->nlocal,
-        list->inum,
-        nep_gpu_nm,
-        itype_convert_map.data(),
-        list->ilist,
-        list->numneigh,
-        firstneighbor_cpu.data(),
-        position_cpu.data(),
-        cpu_potential_per_atom.data(), 
-        cpu_force_per_atom.data(), 
-        cpu_total_virial.data());
+        if (nlocal > 0) {//If there is a vacuum layer, in a multi-core, a block of a certain core has no atoms (local atoms are 0, ghost atoms are not 0)
+            nep_gpu_models[0].compute_large_box_optim(
+            is_build_neighbor,
+            n_all, 
+            atom->nlocal,
+            list->inum,
+            nep_gpu_nm,
+            itype_convert_map.data(),
+            list->ilist,
+            list->numneigh,
+            firstneighbor_cpu.data(),
+            position_cpu.data(),
+            cpu_potential_per_atom.data(), 
+            cpu_force_per_atom.data(), 
+            cpu_total_virial.data());
+        }
         // auto end_compute_large_box_optim = std::chrono::high_resolution_clock::now();
         // auto duration_compute_large_box_optim = std::chrono::duration_cast<std::chrono::microseconds>(end_compute_large_box_optim - start_compute_large_box_optim).count();
 
@@ -1235,21 +1237,22 @@ void PairMATPL::compute(int eflag, int vflag)
             std::vector<double> cpu_potential_per_atom(list->inum, 0.0);
             std::vector<double> cpu_force_per_atom(n_all * 3, 0.0);
             std::vector<double> cpu_total_virial(6, 0.0);
-            
-            nep_gpu_models[ff_idx].compute_large_box_optim(
-            is_build_neighbor,
-            n_all, 
-            atom->nlocal,
-            list->inum,
-            nep_gpu_nm,
-            itype_convert_map.data(),
-            list->ilist,
-            list->numneigh,
-            firstneighbor_cpu.data(),
-            position_cpu.data(),
-            cpu_potential_per_atom.data(), 
-            cpu_force_per_atom.data(), 
-            cpu_total_virial.data());
+            if (nlocal > 0) {
+                nep_gpu_models[ff_idx].compute_large_box_optim(
+                is_build_neighbor,
+                n_all, 
+                atom->nlocal,
+                list->inum,
+                nep_gpu_nm,
+                itype_convert_map.data(),
+                list->ilist,
+                list->numneigh,
+                firstneighbor_cpu.data(),
+                position_cpu.data(),
+                cpu_potential_per_atom.data(), 
+                cpu_force_per_atom.data(), 
+                cpu_total_virial.data());
+            }
 
             for (int i = 0; i < list->inum; ++i) {
                 e_atom_n[ff_idx][i] = cpu_potential_per_atom[i];
