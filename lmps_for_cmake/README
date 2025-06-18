@@ -1,0 +1,17 @@
+# how to install
+# load env
+1. activate python env（pytorch）
+2. load cuda/11.8-share intel/2020 gcc11
+3. load cmake/3. # if the cmake in python-env, skip 
+
+# compile
+4. copy CMakeLists.txt to lammps_root_dir/cmake/
+   copy basic.cmake to  lammps_root_dir/cmake/presets/
+5. make build dir under lammps_root_dir/
+
+6. in build path
+  cmake ../cmake -C ../cmake/presets/basic.cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'`
+7. make -j4
+8. lmp to envs
+   export PATH=/share/app/MATPL/lammps-MatPL/lammps-libtorch-d3-2025.3/build:$PATH
+
