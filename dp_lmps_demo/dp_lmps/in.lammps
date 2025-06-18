@@ -20,7 +20,7 @@ change_box       all triclinic
 
 mass   1    178.49
 mass   2    15.999
-pair_style   matpl   1 jit_dp.pt 
+pair_style   matpl   jit_dp.pt 
 pair_coeff       * * 72 8
 
 thermo_style    custom step temp pe ke etotal press vol lx ly lz xy xz yz

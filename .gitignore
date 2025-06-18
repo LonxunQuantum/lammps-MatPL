@@ -1,6 +1,6 @@
 # Prerequisites
 *.d
-
+lmp_for_cmake/MATPL/NEP_GPU/.vscode
 # Compiled Object files
 *.slo
 *.lo

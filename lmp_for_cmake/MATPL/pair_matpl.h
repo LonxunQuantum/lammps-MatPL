@@ -14,7 +14,7 @@ PairStyle(matpl, PairMATPL);
 #define LMP_PAIR_MLFF_H
 #include "nep_cpu.h"
 #ifdef USE_CUDA
-#include "MATPL/NEP_GPU/force/nep3.cuh"
+#include "NEP_GPU/force/nep3.cuh"
 #endif
 #include "pair.h"
 #include <iostream>
