@@ -1,0 +1,26 @@
+#!/bin/sh
+#SBATCH --job-name=md0
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:1
+#SBATCH --partition=3090,4090
+
+echo "SLURM_SUBMIT_DIR is $SLURM_SUBMIT_DIR"
+
+echo "Starting job $SLURM_JOB_ID at " `date`
+
+echo "Running on nodes: $SLURM_NODELIST"
+
+start=$(date +%s)
+
+
+module load lammps4matpl/2025.3-d3
+
+# or 
+# export PATH=/the_lammps_root_dir/buid:$PATH
+# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(python3 -c "import torch; print(torch.__path__[0])")/lib:$(dirname $(dirname $(which python3)))/lib
+
+
+which lmp
+
+mpirun -np 1 lmp -in in.lammps
