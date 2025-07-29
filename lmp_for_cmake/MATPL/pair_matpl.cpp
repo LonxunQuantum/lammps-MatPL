@@ -439,22 +439,10 @@ std::tuple<double, double, double, double, double, double> PairMATPL::calc_max_e
 {
     int i, j;
     int ff_idx;
-    double max_err, err, min_err, max_err_ei, err_ei, min_err_ei;
-    double max_mean_err_out, max_mean_err;
-    double max_mean_ei_out, max_mean_ei;
     double num_ff_inv;
     int nlocal = atom->nlocal;
     // int *tag = atom->tag;
-    min_err = 10000;
-    min_err_ei = 10000;
-    max_err = 0.0;
-    max_err_ei = 0.0;
     num_ff_inv = 1.0 / num_ff;
-
-    max_mean_err_out = 0.0;
-    max_mean_err = 0.0;
-    max_mean_ei_out = 0.0;
-    max_mean_ei = 0.0;
 
     for (ff_idx = 0; ff_idx < num_ff; ff_idx++) {
         p_ff_idx = ff_idx;
@@ -510,30 +498,36 @@ std::tuple<double, double, double, double, double, double> PairMATPL::calc_max_e
     // find max error
     for (ff_idx = 0; ff_idx < num_ff; ff_idx++) {
         for (j = 0; j < nlocal * 3; j += 3) {
-            err = f_err[ff_idx][j] * f_err[ff_idx][j] + f_err[ff_idx][j + 1] * f_err[ff_idx][j + 1] + f_err[ff_idx][j + 2] * f_err[ff_idx][j + 2];
-            f_max_meanff[j / 3] += err;
-            err = sqrt(err);
-            if (err > max_err) max_err = err;
-            if (err < min_err) min_err = err;
+            f_max_meanff[j / 3] += f_err[ff_idx][j] * f_err[ff_idx][j] + f_err[ff_idx][j + 1] * f_err[ff_idx][j + 1] + f_err[ff_idx][j + 2] * f_err[ff_idx][j + 2];
         }
         for (j = 0; j < nlocal; j++) {
-            err_ei = ei_err[ff_idx][j] * ei_err[ff_idx][j];
-            ei_max_meanff[j] += err_ei;
-            err_ei = sqrt(err_ei);
-            if (err_ei > max_err_ei) max_err_ei = err_ei;
-            if (err_ei < min_err_ei) min_err_ei = err_ei;
+            ei_max_meanff[j] += ei_err[ff_idx][j] * ei_err[ff_idx][j];
         }
     }
 
+    double min_f_err, max_f_err, avg_f_err, min_ei_err, max_ei_err, avg_ei_err;
+    min_f_err = 10000;
+    max_f_err = 0.0;
+    avg_f_err = 0.0;
+    min_ei_err = 10000;
+    max_ei_err = 0.0;
+    avg_ei_err = 0.0;
+
+    double _tmp_f = 0.0;
+    double _tmp_ei = 0.0;
     // find max_mean error
     for (j = 0; j < nlocal; j++) {
-        max_mean_ei  = sqrt(ei_max_meanff[j]/ num_ff);
-        max_mean_err = sqrt(f_max_meanff[j] / num_ff);
-        if (max_mean_err_out < max_mean_err) max_mean_err_out = max_mean_err;
-        if (max_mean_ei_out < max_mean_ei) max_mean_ei_out = max_mean_ei;
+        _tmp_f = sqrt(f_max_meanff[j] / num_ff);
+        _tmp_ei  = sqrt(ei_max_meanff[j]/ num_ff);
+        if (min_f_err > _tmp_f) min_f_err = _tmp_f;
+        if (max_f_err < _tmp_f) max_f_err = _tmp_f;
+        if (min_ei_err > _tmp_ei) min_ei_err = _tmp_ei;
+        if (max_ei_err < _tmp_ei) max_ei_err = _tmp_ei;
+        avg_f_err  += _tmp_f;
+        avg_ei_err += _tmp_ei;
     }
-    return std::make_tuple(max_mean_err_out, max_err, min_err, max_mean_ei_out, max_err_ei, min_err_ei);
 
+    return std::make_tuple(avg_f_err, max_f_err, min_f_err, avg_ei_err, max_ei_err, min_ei_err);
 }
 
 int PairMATPL::pack_reverse_comm(int n, int first, double* buf) {
@@ -1346,33 +1340,41 @@ void PairMATPL::compute(int eflag, int vflag)
         // calculate model deviation with Force
         std::tuple<double, double, double, double, double, double> result = calc_max_error(f_n, e_atom_n);
 
-        max_mean_err_out = std::get<0>(result);
-        max_err = std::get<1>(result);
-        min_err = std::get<2>(result);
-        max_mean_ei_out = std::get<3>(result);
-        max_err_ei = std::get<4>(result);
-        min_err_ei = std::get<5>(result);
+        double avg_f_err, max_f_err, min_f_err, avg_ei_err, max_ei_err, min_ei_err;
+        double glb_avg_f_err, glb_max_f_err, glb_min_f_err, glb_avg_ei_err, glb_max_ei_err, glb_min_ei_err;
+
+        avg_f_err = std::get<0>(result);
+        max_f_err = std::get<1>(result);
+        min_f_err = std::get<2>(result);
+        avg_ei_err = std::get<3>(result);
+        max_ei_err = std::get<4>(result);
+        min_ei_err = std::get<5>(result);
 
         // max_err = result.first;
         // max_err_ei = result.second;
 
-        MPI_Allreduce(&max_err, &global_max_err, 1, MPI_DOUBLE, MPI_MAX, world);
-        MPI_Allreduce(&min_err, &global_min_err, 1, MPI_DOUBLE, MPI_MIN, world);
-        MPI_Allreduce(&max_mean_err_out, &global_max_mean_err, 1, MPI_DOUBLE, MPI_MAX, world);
+        MPI_Allreduce(&max_f_err, &glb_max_f_err, 1, MPI_DOUBLE, MPI_MAX, world);
+        MPI_Allreduce(&min_f_err, &glb_min_f_err, 1, MPI_DOUBLE, MPI_MIN, world);
+        MPI_Allreduce(&avg_f_err, &glb_avg_f_err, 1, MPI_DOUBLE, MPI_SUM, world);
 
-        MPI_Allreduce(&max_err_ei, &global_max_err_ei, 1, MPI_DOUBLE, MPI_MAX, world);
-        MPI_Allreduce(&min_err_ei, &global_min_err_ei, 1, MPI_DOUBLE, MPI_MIN, world);
-        MPI_Allreduce(&max_mean_ei_out, &global_max_mean_err_ei, 1, MPI_DOUBLE, MPI_MAX, world);
+        MPI_Allreduce(&max_ei_err, &glb_max_ei_err, 1, MPI_DOUBLE, MPI_MAX, world);
+        MPI_Allreduce(&min_ei_err, &glb_min_ei_err, 1, MPI_DOUBLE, MPI_MIN, world);
+        MPI_Allreduce(&avg_ei_err, &glb_avg_ei_err, 1, MPI_DOUBLE, MPI_SUM, world);
 
-        max_err_list.push_back(global_max_err);
-        max_err_ei_list.push_back(global_max_err_ei);
+        if (atom->natoms > 0) {
+            glb_avg_f_err /= double(atom->natoms);
+            glb_avg_ei_err /= double(atom->natoms);
+        }
+
+        max_err_list.push_back(glb_max_f_err);
+        max_err_ei_list.push_back(glb_max_ei_err);
 
         if (current_timestep % out_freq == 0) {
             if (me == 0) {
                 // fprintf(explrError_fp, "%9d %16.9f %16.9f\n", (max_err_list.size()-1)*out_freq, global_max_err, global_max_err_ei);
                 fprintf(explrError_fp, "%9d %16.9f %16.9f %16.9f %16.9f %16.9f %16.9f\n", 
-                            current_timestep, global_max_mean_err, global_min_err, global_max_err, 
-                                global_max_mean_err_ei, global_min_err_ei, global_max_err_ei);
+                            current_timestep, glb_avg_f_err, glb_min_f_err, glb_max_f_err, 
+                                glb_avg_ei_err, glb_min_ei_err, glb_max_ei_err);
                 fflush(explrError_fp);
             } 
         }
