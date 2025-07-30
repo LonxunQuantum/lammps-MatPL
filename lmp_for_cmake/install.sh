@@ -79,7 +79,6 @@ fi
 ENV_SCRIPT="$INSTALL_DIR/env.sh"
 echo "Generating environment variable script: $ENV_SCRIPT"
 cat > "$ENV_SCRIPT" << EOF
-#!/bin/bash
 export PATH="$INSTALL_DIR/bin:\$PATH"
 export LD_LIBRARY_PATH="\$LD_LIBRARY_PATH:$(python3 -c "import torch; print(torch.__path__[0])")/lib:$(dirname $(dirname $(which python3)))/lib"
 EOF
