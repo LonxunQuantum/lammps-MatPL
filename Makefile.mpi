@@ -178,7 +178,7 @@ $(ARLIB): $(OBJ) $(EXTRA_LINK_DEPENDS)
 
 $(SHLIB): $(OBJ) $(EXTRA_LINK_DEPENDS)
 	$(CC) $(CCFLAGS) $(SHFLAGS) $(SHLIBFLAGS) $(EXTRA_PATH) -o ../$(SHLIB) \
-		$(OBJ) $(EXTRA_LIB) $(LIB) $(CPUFLAGS)
+		$(OBJ) $(EXTRA_LIB) $(LIB) $(GPUFLAGS)
 	@rm -f $(SHLIB)
 	@ln -s ../$(SHLIB) $(SHLIB)
 
