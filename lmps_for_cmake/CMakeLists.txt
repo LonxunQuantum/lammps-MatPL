@@ -1090,6 +1090,14 @@ endif()
 #target_link_libraries(lammps PUBLIC "${TORCH_LIBRARIES}")
 
 find_package(CUDA)
+# Pascal, GTX1080, Titan X, Titan Xp: 60
+# Volta, Titan V: 70
+# Turing, RTX 2060, RTX 2070, RTX 2080, RTX 2080Ti, Titan RTX: 75
+# Ampere, A100: 80
+# Ampere, RTX 3070, RTX 3080, RTX 3090: 86
+# Ampere, RTX 4090: 89
+# Hopper H100 H800 H200: 90
+set(CMAKE_CUDA_ARCHITECTURES 60 70 75 80 86 89 90)
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -fmad=false -O3")
 string(REPLACE "-gencode arch=compute_50,code=sm_50" "" CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS}")
 target_link_libraries(lammps PUBLIC ${CUDA_LIBRARIES} cuda)
