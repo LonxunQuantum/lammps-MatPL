@@ -17,15 +17,16 @@ Volta = -gencode arch=compute_70,code=sm_70 -gencode arch=compute_70,code=comput
 # Turing, RTX 2060, RTX 2070, RTX 2080, RTX 2080Ti, Titan RTX
 Turing = -gencode arch=compute_75,code=sm_75 -gencode arch=compute_75,code=compute_75
 
-# Ampere, A100
+# Ampere, A100 A800
 AmpereD = -gencode arch=compute_80,code=sm_80 -gencode arch=compute_80,code=compute_80
 
 # Ampere, RTX 3070, RTX 3080, RTX 3090
 Ampere = -gencode arch=compute_86,code=sm_86 -gencode arch=compute_86,code=compute_86
+
 # Ampere, RTX 4090
 Ampere4 = -gencode arch=compute_89,code=sm_89 -gencode arch=compute_89,code=compute_89
 
-# Hopper H100 H800 H200
+# Hopper H100 H200
 Hopper = -gencode arch=compute_90,code=sm_90 -gencode arch=compute_90,code=compute_90
 
 # Combine all GPU targets

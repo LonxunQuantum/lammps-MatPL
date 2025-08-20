@@ -250,9 +250,9 @@ void PairMATPL::settings(int narg, char** arg)
     }
     // since we need num_ff, so well allocate memory here
     // but not in allocate()
-    nmax = atom->nmax;
-    memory->create(f_n, num_ff, atom->nmax, 3, "pair_matpl:f_n");
-    memory->create(e_atom_n, num_ff, atom->natoms, "pair_matpl:e_atom_n");
+    nmax = num_ff;
+    memory->create(f_n, num_ff, nmax, 3, "pair_matpl:f_n");
+    memory->create(e_atom_n, num_ff, nmax, "pair_matpl:e_atom_n");
 } 
 
 /* ----------------------------------------------------------------------
