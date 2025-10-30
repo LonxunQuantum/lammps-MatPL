@@ -1089,7 +1089,18 @@ endif()
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 #target_link_libraries(lammps PUBLIC "${TORCH_LIBRARIES}")
 
-find_package(CUDA)
+find_package(CUDAToolkit REQUIRED)
+if(CUDAToolkit_FOUND)
+  message(STATUS "CUDAToolkit found: ${CUDAToolkit_VERSION}")
+  message(STATUS "CUDAToolkit include dirs: ${CUDAToolkit_INCLUDE_DIRS}")
+  message(STATUS "CUDAToolkit libraries: ${CUDAToolkit_LIBRARY_DIR}")
+  include_directories(${CUDAToolkit_INCLUDE_DIRS})
+  target_link_libraries(lammps PUBLIC CUDA::cudart CUDA::cuda_driver)
+else()
+  message(FATAL_ERROR "CUDAToolkit not found")
+endif()
+
+#find_package(CUDA)
 # Pascal, GTX1080, Titan X, Titan Xp: 60
 # Volta, Titan V: 70
 # Turing, RTX 2060, RTX 2070, RTX 2080, RTX 2080Ti, Titan RTX: 75

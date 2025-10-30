@@ -8,17 +8,17 @@ if "${restart} > 0" then "read_restart lmps.restart.*" else "read_data lmp.confi
 
 mass   1    107.868
 
-#pair_style   matpl  0_nep5.txt 1_nep5.txt 2_nep5.txt 3_nep5.txt  out_freq ${DUMP_FREQ} out_file model_devi.out 
-#pair_coeff       * * 47
+# pair_style   matpl  0_nep5.txt 1_nep5.txt 2_nep5.txt 3_nep5.txt  out_freq ${DUMP_FREQ} out_file model_devi.out 
+# pair_coeff       * * 47
 
 #pair_style nep
 #pair_coeff * * 0_nep5.txt Ag
 
 # with model_deviation
-pair_style hybrid/overlay matpl 0_nep5.txt 1_nep5.txt 2_nep5.txt 3_nep5.txt  out_freq ${DUMP_FREQ} out_file model_devi.out d3 9000 1600 damp_bj pbe
+# pair_style hybrid/overlay matpl 0_nep5.txt 1_nep5.txt 2_nep5.txt 3_nep5.txt  out_freq ${DUMP_FREQ} out_file model_devi.out d3 9000 1600 damp_bj pbe
 
 # or 
-# pair_style hybrid/overlay matpl 0_nep5.txt d3 9000 1600 damp_bj pbe
+pair_style hybrid/overlay matpl 0_nep5.txt d3 9000 1600 damp_bj pbe
  
 pair_coeff * * matpl Ag
 pair_coeff * * d3 Ag
