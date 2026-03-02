@@ -35,7 +35,7 @@ cmake -C ../cmake/presets/basic.cmake \
 cmake --build . --parallel N #Number of cores for parallel compilation
 
 # how to use
-Reference case ./examples/kknep
+Reference case ./examples
 
 
 # Citation
