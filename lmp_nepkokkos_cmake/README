@@ -39,6 +39,9 @@ Reference case ./examples/kknep
 
 
 # Citation
+* If you use the LAMMPS interface of this nep-kokkos here, you are suggested to cite the following:
+
+  * https://github.com/LonxunQuantum/MatPL
 
 * If you directly or indirectly use the `NEP` class here, you are suggested to cite the following paper:
 
