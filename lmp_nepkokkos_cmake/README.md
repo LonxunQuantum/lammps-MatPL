@@ -1,22 +1,29 @@
 # nep with KOKKOS
 
-In the LAMMPS Kokkos version of NEP, neighbor list computations are handled by Kokkos on the GPU, while energy and force calculations are performed through custom C++/CUDA operators. Compared to the earlier MatPL-2025.3 version, memory consumption has been reduced by nearly one-third, and inference speed has been significantly accelerated. Furthermore, it demonstrates excellent parallel efficiency across nodes, enabling scalability to multi-node clusters.
+In this LAMMPS Kokkos version of NEP, neighbor list computations are handled by Kokkos on the GPU, while energy and force calculations are performed through custom C++/CUDA operators. Compared to the earlier MatPL-2025.3 version, memory consumption has been reduced by nearly one-third, and inference speed has been significantly accelerated. Furthermore, it demonstrates excellent parallel efficiency across nodes, enabling scalability to multi-node clusters.
+
+This Kokkos interface for NEP supports the nep.txt forcefield files trained with both `MatPL-2025.3(and later version)` and `GPUMD`.
+
 # how to compile
 
 ## 1. copy files to lammpsfir
 
-We recommend using the kknep-pach.sh script to automatically copy the nep code to the LAMMPS directory and modify the CMakeLists.txt file. The command is as follows:
+We recommend using the `kknep-pach.sh` script to automatically copy the nep code to the LAMMPS directory and modify the CMakeLists.txt file. The command is as follows:
 
-sh kknep-patch.sh the/path/of/lammps/rootdir
+```bash
+bash kknep-patch.sh the/path/of/lammps/rootdir
+```
 
-None: Currently, only versions stable_29Aug2024_update4 and lammps-stable_2Aug2023_update4 are supported; higher versions are not supported.
+* Currently, only versions stable_29Aug2024_update4 and lammps-stable_2Aug2023_update4 are supported (igher versions are not supported ) 
+* The lammps-stable_2Aug2023_update4 is more faster than stable_29Aug2024_update4 in our test.
 
 ## 2. load the compilation environment
-module load cuda/11.6 openmpi/4.1.4 cmake/3.21.6 # CUDA 11.8 requires a higher version of the driver.
-source /opt/rh/devtoolset-8/enable  # for gcc
+
+Compilation requires OpenMPI, CUDA, CMake, and GCC. We recommend using CUDA/11.6, OpenMPI/4.1.6, CMake/3.21.6, and GCC 8.5. Note that CUDA 11.8 and later versions require a more recent driver.
 
 ## 3. doing compilation
 
+```bash
 mkdir build & cd build
 
 cmake -C ../cmake/presets/basic.cmake \
@@ -32,14 +39,19 @@ cmake -C ../cmake/presets/basic.cmake \
     -DTEST_TIME=ON \
     ../cmake
 
-cmake --build . --parallel N #Number of cores for parallel compilation
+cmake --build . -j N #Number of cores for parallel compilation
+```
 
 # how to use
 Reference case ./examples
 
+```txt
+pair_style   matpl/nep/kk  nep.txt
+pair_coeff   * * Hf O
+```
 
 # Citation
-* If you use the LAMMPS interface of this nep-kokkos here, you are suggested to cite the following:
+* If you use the LAMMPS interface of this nep-kokkos here, you are suggested to cite the following (`The article will be released soon`):
 
   * https://github.com/LonxunQuantum/MatPL
 
