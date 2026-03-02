@@ -1,0 +1,110 @@
+LAMMPS (2 Aug 2023 - Update 4)
+KOKKOS mode with Kokkos version 3.7.2 is enabled (src/KOKKOS/kokkos.cpp:108)
+  will use up to 4 GPU(s) per node
+WARNING: When using a single thread, the Kokkos Serial backend (i.e. Makefile.kokkos_mpi_only) gives better performance than the OpenMP backend (src/KOKKOS/kokkos.cpp:238)
+WARNING: Turning off GPU-aware MPI since it is not detected, use '-pk kokkos gpu/aware on' to override (src/KOKKOS/kokkos.cpp:316)
+  using 1 OpenMP thread(s) per MPI task
+package kokkos
+package kokkos
+variable        NSTEPS          equal 1
+variable        THERMO_FREQ     equal 100
+variable        DUMP_FREQ       equal 10
+variable        restart         equal 0
+variable        TEMP            equal 300.000000
+variable        PRESS           equal 0.000000
+variable        TAU_T           equal 0.050000
+variable        TAU_P           equal 0.500000
+
+package kokkos neigh full comm device
+newton on
+
+units           metal
+boundary        p p p
+atom_style      atomic
+
+neighbor        1.0 bin
+neigh_modify    delay 10
+
+#box              tilt large
+if "${restart} > 0" then "read_restart lmps.restart.*" else "read_data conf.lmp"
+read_data conf.lmp
+Reading data file ...
+  orthogonal box = (0 0 0) to (18.6206 18.6206 18.6206)
+  2 by 2 by 2 MPI processor grid
+  reading atoms ...
+  648 atoms
+  read_data CPU = 0.069 seconds
+#change_box       all triclinic
+replicate   19 19 19
+Replication is creating a 19x19x19 = 6859 times larger system...
+  orthogonal box = (0 0 0) to (353.7914 353.7914 353.7914)
+  2 by 2 by 2 MPI processor grid
+  4444632 atoms
+  replicate CPU = 0.181 seconds
+
+mass   1    15.999
+mass   2    1.00784
+pair_style   matpl/nep/kk nep.txt
+NEP Kokkos potential nep.txt loaded successfully
+pair_coeff       * * O H
+
+thermo_style    custom step temp pe ke etotal press vol
+thermo          ${THERMO_FREQ}
+thermo          100
+
+if "${restart} == 0" then "velocity        all create ${TEMP} 35826"
+velocity        all create ${TEMP} 35826
+velocity        all create 300 35826
+fix             1 all nvt/kk temp ${TEMP} ${TEMP} ${TAU_T} #iso ${PRESS} ${PRESS} ${TAU_P}
+fix             1 all nvt/kk temp 300 ${TEMP} ${TAU_T} 
+fix             1 all nvt/kk temp 300 300 ${TAU_T} 
+fix             1 all nvt/kk temp 300 300 0.05 
+
+timestep        0.000500
+run             ${NSTEPS} upto
+run             1 upto
+Neighbor list info ...
+  update: every = 1 steps, delay = 10 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 7
+  ghost atom cutoff = 7
+  binsize = 7, bins = 51 51 51
+  1 neighbor lists, perpetual/occasional/extra = 1 0 0
+  (1) pair matpl/nep/kk, perpetual
+      attributes: full, newton on, kokkos_device
+      pair build: full/bin/kk/device
+      stencil: full/bin/3d
+      bin: kk/device
+Per MPI rank memory allocation (min/avg/max) = 112.2 | 112.2 | 112.2 Mbytes
+   Step          Temp          PotEng         KinEng         TotEng         Press          Volume    
+         0   300           -230447.46      172354.09     -58093.37      -40209.712      44283487     
+         1   302.59283     -231999.88      173843.71     -58156.172     -38065.302      44283487     
+Loop time of 0.0497517 on 8 procs for 1 steps with 4444632 atoms
+
+Performance: 0.868 ns/day, 27.640 hours/ns, 20.100 timesteps/s, 89.336 Matom-step/s
+70.9% CPU use with 8 MPI tasks x 1 OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 0.034873   | 0.034877   | 0.03488    |   0.0 | 70.10
+Neigh   | 0          | 0          | 0          |   0.0 |  0.00
+Comm    | 0.0078379  | 0.0079532  | 0.0080354  |   0.1 | 15.99
+Output  | 7.838e-05  | 0.00030821 | 0.00054803 |   0.0 |  0.62
+Modify  | 0.0021391  | 0.002226   | 0.0023258  |   0.1 |  4.47
+Other   |            | 0.004387   |            |       |  8.82
+
+Nlocal:         555579 ave      557203 max      553955 min
+Histogram: 1 2 0 0 1 0 1 1 1 1
+Nghost:         143061 ave      145455 max      140761 min
+Histogram: 2 0 2 0 0 0 1 1 1 1
+Neighs:              0 ave           0 max           0 min
+Histogram: 8 0 0 0 0 0 0 0 0 0
+FullNghs:  7.94718e+07 ave 7.98069e+07 max 7.91358e+07 min
+Histogram: 1 1 1 1 0 0 1 1 1 1
+
+Total # of neighbors = 6.3577443e+08
+Ave neighs/atom = 143.04321
+Neighbor list builds = 0
+Dangerous builds = 0
+Total wall time: 0:00:01
