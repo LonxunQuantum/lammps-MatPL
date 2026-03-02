@@ -1,0 +1,47 @@
+# nep with KOKKOS
+
+In the LAMMPS Kokkos version of NEP, neighbor list computations are handled by Kokkos on the GPU, while energy and force calculations are performed through custom C++/CUDA operators. Compared to the earlier MatPL-2025.3 version, memory consumption has been reduced by nearly one-third, and inference speed has been significantly accelerated. Furthermore, it demonstrates excellent parallel efficiency across nodes, enabling scalability to multi-node clusters.
+# how to compile
+
+## 1. copy files to lammpsfir
+
+We recommend using the kknep-pach.sh script to automatically copy the nep code to the LAMMPS directory and modify the CMakeLists.txt file. The command is as follows:
+
+sh kknep-patch.sh the/path/of/lammps/rootdir
+
+None: Currently, only versions stable_29Aug2024_update4 and lammps-stable_2Aug2023_update4 are supported; higher versions are not supported.
+
+## 2. load the compilation environment
+module load cuda/11.6 openmpi/4.1.4 cmake/3.21.6 # CUDA 11.8 requires a higher version of the driver.
+source /opt/rh/devtoolset-8/enable  # for gcc
+
+## 3. doing compilation
+
+mkdir build & cd build
+
+cmake -C ../cmake/presets/basic.cmake \
+    -DPKG_MESONT=no \
+    -DPKG_JPEG=no \
+    -DPKG_KOKKOS=yes \
+    -DPKG_NEP_KK=yes \
+    -DKokkos_ENABLE_CUDA=yes \
+    -DKokkos_ENABLE_OPENMP=yes \
+    -DKokkos_ENABLE_CUDA_LAMBDA=yes \
+    -DFFT_KOKKOS=CUFFT \
+    -DKokkos_ARCH_AMPERE86=ON \
+    -DTEST_TIME=ON \
+    ../cmake
+
+cmake --build . --parallel N #Number of cores for parallel compilation
+
+# how to use
+Reference case ./examples/kknep
+
+
+# Citation
+
+* If you directly or indirectly use the `NEP` class here, you are suggested to cite the following paper:
+
+  * Ke Xu, Hekai Bu, Shuning Pan, Eric Lindgren, Yongchao Wu, Yong Wang, Jiahui Liu, Keke Song, Bin Xu, Yifan Li, Tobias Hainer, Lucas Svensson, Julia Wiktor, Rui Zhao, Hongfu Huang, Cheng Qian, Shuo Zhang, Zezhu Zeng, Bohan Zhang, Benrui Tang, Yang Xiao, Zihan Yan, Jiuyang Shi, Zhixin Liang, Junjie Wang, Ting Liang, Shuo Cao, Yanzhou Wang, Penghua Ying, Nan Xu, Chengbing Chen, Yuwen Zhang, Zherui Chen, Xin Wu, Wenwu Jiang, Esme Berger, Yanlong Li, Shunda Chen, Alexander J. Gabourie, Haikuan Dong, Shiyun Xiong, Ning Wei, Yue Chen, Jianbin Xu, Feng Ding, Zhimei Sun, Tapio Ala-Nissila, Ari Harju, Jincheng Zheng, Pengfei Guan, Paul Erhart, Jian Sun, Wengen Ouyang, Yanjing Su, Zheyong Fan, [GPUMD 4.0: A high-performance molecular dynamics package for versatile materials simulations with machine-learned potentials]( https://doi.org/10.1002/mgea.70028), MGE Advances **3**, e70028 (2025).
+
+* If you use the LAMMPS interface of the `NEP` class, a proper citation for LAMMPS is also suggested. 

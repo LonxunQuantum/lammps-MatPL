@@ -1,0 +1,45 @@
+#pragma once
+
+#include "error.cuh"
+
+enum class Memory_Type {
+    global = 0, // global memory, also called (linear) device memory
+    managed     // managed memory, also called unified memory
+};
+
+template <typename T>
+class GPU_Vector {
+public:
+    GPU_Vector();
+    GPU_Vector(const size_t size, const Memory_Type memory_type = Memory_Type::global);
+    GPU_Vector(const size_t size, const T value, const Memory_Type memory_type = Memory_Type::global);
+    ~GPU_Vector();
+
+    void resize(const size_t size, const Memory_Type memory_type = Memory_Type::global);
+    void resize(const size_t size, const T value, const Memory_Type memory_type = Memory_Type::global);
+
+    void copy_from_host(const T* h_data);
+    void copy_from_host(const T* h_data, const size_t size);
+    void copy_from_device(const T* d_data);
+    void copy_from_device(const T* d_data, const size_t size);
+    void copy_to_host(T* h_data);
+    void copy_to_host(T* h_data, const size_t size);
+    void copy_to_device(T* d_data);
+    void copy_to_device(T* d_data, const size_t size);
+
+    void fill(const T value);
+    void free();
+    
+    T& operator[](int index);
+
+    size_t size() const;
+    T const* data() const;
+    T* data();
+
+// private:
+    bool allocated_;
+    size_t size_;
+    size_t memory_;
+    Memory_Type memory_type_;
+    T* data_;
+};
