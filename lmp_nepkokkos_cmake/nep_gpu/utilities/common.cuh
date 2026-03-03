@@ -11,6 +11,11 @@
     GNU General Public License for more details.
     You should have received a copy of the GNU General Public License
     along with GPUMD.  If not, see <http://www.gnu.org/licenses/>.
+
+***
+Only the constant definitions related to NEP and ZBL are retained, compared to the GPUMD sourcecode src/utilities/common.cuh
+    wuxingxing@pwmat.com and MatPL development team. 2026. Beijing Lonxun Quantum Co.,Ltd.
+***
 */
 #pragma once
 

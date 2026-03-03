@@ -11,6 +11,13 @@
     GNU General Public License for more details.
     You should have received a copy of the GNU General Public License
     along with GPUMD.  If not, see <http://www.gnu.org/licenses/>.
+
+***
+remove 2 funcions from src/utilities/error.cuh
+void print_line_1(void);
+void print_line_2(void);
+  wuxingxing@pwmat.com and MatPL development team. 2026.
+***
 */
 #pragma once
 // #include <cuda_runtime.h>

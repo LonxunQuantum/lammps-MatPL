@@ -2,7 +2,9 @@
 
 In this LAMMPS Kokkos version of NEP, neighbor list computations are handled by Kokkos on the GPU, while energy and force calculations are performed through custom C++/CUDA operators. Compared to the earlier MatPL-2025.3 version, memory consumption has been reduced by nearly one-third, and inference speed has been significantly accelerated. Furthermore, it demonstrates excellent parallel efficiency across nodes, enabling scalability to multi-node clusters.
 
-This Kokkos interface for NEP supports the nep.txt forcefield files trained with both `MatPL-2025.3(and later version)` and `GPUMD`.
+* This Kokkos interface for NEP supports the nep.txt forcefield files trained with both `MatPL-2025.3(and later version)` and `GPUMD`.
+
+* The code implementation is based on the NEP file parsing, descriptor calculation, and force evaluation routines from GPUMD 4.6 (https://github.com/brucefan1983/GPUMD). Building on this foundation, we have adapted it to LAMMPS's KOKKOS neighbor list conventions, meticulously optimized the kernels for descriptor and force calculations, and incorporated a multi-model deviation calculation feature for active learning.
 
 # how to compile
 
@@ -48,6 +50,13 @@ Reference case ./examples
 ```txt
 pair_style   matpl/nep/kk  nep.txt
 pair_coeff   * * Hf O
+```
+
+```txt
+# for multi-model deviation
+pair_style   matpl/nep/kk  nep0.txt nep1.txt nep2.txt nep3.txt out_freq ${DUMP_FREQ} out_file model_devi.out
+pair_coeff       * * Hf O
+
 ```
 
 # Citation

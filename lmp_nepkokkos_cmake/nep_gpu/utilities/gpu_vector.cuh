@@ -11,6 +11,13 @@
     GNU General Public License for more details.
     You should have received a copy of the GNU General Public License
     along with GPUMD.  If not, see <http://www.gnu.org/licenses/>.
+
+***
+Compared to the source code(src/utilities/gpu_vector.cuh)
+ 1. this approach separates method definitions from implementations.
+ 2. a free() operation has been added to resize().
+  wuxingxing@pwmat.com and MatPL development team. 2026.
+***
 */
 #pragma once
 
