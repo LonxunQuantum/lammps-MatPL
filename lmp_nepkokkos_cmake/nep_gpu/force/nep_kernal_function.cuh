@@ -394,18 +394,26 @@ static __global__ void backward_force_2b_perneigh(
     float* s_sxx = nullptr;
     float* s_syy = nullptr;
     float* s_szz = nullptr;
+
     float* s_sxy = nullptr;
     float* s_sxz = nullptr;
     float* s_syz = nullptr;
-
+    
+    float* s_syx = nullptr;
+    float* s_szx = nullptr;
+    float* s_szy = nullptr;
+    
     int offset = 3 * blockDim.x;  // 已占用 3 个 float 数组
     if (vflag_either) {
-        s_sxx = &shared[offset];
-        s_syy = &shared[offset + blockDim.x];
+        s_sxx = &shared[offset                 ];
+        s_syy = &shared[offset +     blockDim.x];
         s_szz = &shared[offset + 2 * blockDim.x];
         s_sxy = &shared[offset + 3 * blockDim.x];
         s_sxz = &shared[offset + 4 * blockDim.x];
         s_syz = &shared[offset + 5 * blockDim.x];
+        s_syx = &shared[offset + 6 * blockDim.x];
+        s_szx = &shared[offset + 7 * blockDim.x];
+        s_szy = &shared[offset + 8 * blockDim.x];
     }
     int tid = threadIdx.x;
     int atomi = g_ilist[blockIdx.x];   // 每个 block 处理一个中心原子
@@ -418,10 +426,10 @@ static __global__ void backward_force_2b_perneigh(
     float fxi = 0.0f, fyi = 0.0f, fzi = 0.0f;
     float sxxi = 0.0f, syyi = 0.0f, szzi = 0.0f;
     float sxyi = 0.0f, sxzi = 0.0f, syzi = 0.0f;
-
+    float syxi = 0.0f, szxi = 0.0f, szyi = 0.0f;
     int c_start = paramb.num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
     int num_neigh_i = g_NN[atomi];
-    if (tid < paramb.n_max_radial_plus1) {// 线程块大小一定是两体feature大的
+    if (tid < paramb.n_max_radial_plus1) {
       s_g_Fp[tid] = g_Fp[atomi + tid * nlocal];
     }
     __syncthreads();
@@ -476,12 +484,16 @@ static __global__ void backward_force_2b_perneigh(
           atomicAdd(&g_f[n2*3+1], double(-f12[1]));
           atomicAdd(&g_f[n2*3+2], double(-f12[2]));
           if (vflag_either) {
-              atomicAdd(&g_virial[n2 + 0 * nall], -r12[0] * f12[0]);
-              atomicAdd(&g_virial[n2 + 1 * nall], -r12[1] * f12[1]);
-              atomicAdd(&g_virial[n2 + 2 * nall], -r12[2] * f12[2]);
-              atomicAdd(&g_virial[n2 + 3 * nall], -r12[0] * f12[1]);
-              atomicAdd(&g_virial[n2 + 4 * nall], -r12[0] * f12[2]);
-              atomicAdd(&g_virial[n2 + 5 * nall], -r12[1] * f12[2]);
+              atomicAdd(&g_virial[n2 + 0 * nall], -r12[0] * f12[0]); // xx
+              atomicAdd(&g_virial[n2 + 1 * nall], -r12[1] * f12[1]); // yy
+              atomicAdd(&g_virial[n2 + 2 * nall], -r12[2] * f12[2]); // zz
+              atomicAdd(&g_virial[n2 + 3 * nall], -r12[0] * f12[1]); // xy
+              atomicAdd(&g_virial[n2 + 4 * nall], -r12[0] * f12[2]); // xz
+              atomicAdd(&g_virial[n2 + 5 * nall], -r12[1] * f12[2]); // yz
+
+              atomicAdd(&g_virial[n2 + 6 * nall], -r12[1] * f12[0]); // yx
+              atomicAdd(&g_virial[n2 + 7 * nall], -r12[2] * f12[0]); // zx
+              atomicAdd(&g_virial[n2 + 8 * nall], -r12[2] * f12[1]); // zy
           }
         } else {
         // 累加到中心原子的寄存器变量
@@ -495,6 +507,10 @@ static __global__ void backward_force_2b_perneigh(
             sxyi += r12[0] * f21[1];
             sxzi += r12[0] * f21[2];
             syzi += r12[1] * f21[2];
+
+            syxi += r12[1] * f12[0];
+            szxi += r12[2] * f12[0];
+            szyi += r12[2] * f12[1];
         }
       }
     }
@@ -510,6 +526,10 @@ static __global__ void backward_force_2b_perneigh(
         s_sxy[tid] = sxyi;
         s_sxz[tid] = sxzi;
         s_syz[tid] = syzi;
+
+        s_syx[tid] = syxi;
+        s_szx[tid] = szxi;
+        s_szy[tid] = szyi;
     }
     __syncthreads();
 
@@ -526,6 +546,10 @@ static __global__ void backward_force_2b_perneigh(
                 s_sxy[tid] += s_sxy[tid + s];
                 s_sxz[tid] += s_sxz[tid + s];
                 s_syz[tid] += s_syz[tid + s];
+                
+                s_syx[tid] += s_syx[tid + s];
+                s_szx[tid] += s_szx[tid + s];
+                s_szy[tid] += s_szy[tid + s];
             }
         }
         __syncthreads();
@@ -533,18 +557,22 @@ static __global__ void backward_force_2b_perneigh(
 
     // 线程 0 将归约结果原子累加到全局
     if (tid == 0) {
-        atomicAdd(&g_f[atomi*3],   double(s_fx[0]));
-        atomicAdd(&g_f[atomi*3+1], double(s_fy[0]));
-        atomicAdd(&g_f[atomi*3+2], double(s_fz[0]));
+      atomicAdd(&g_f[atomi*3],   double(s_fx[0]));
+      atomicAdd(&g_f[atomi*3+1], double(s_fy[0]));
+      atomicAdd(&g_f[atomi*3+2], double(s_fz[0]));
 
-        if (vflag_either) {
-            atomicAdd(&g_virial[atomi + 0 * nall], s_sxx[0]);
-            atomicAdd(&g_virial[atomi + 1 * nall], s_syy[0]);
-            atomicAdd(&g_virial[atomi + 2 * nall], s_szz[0]);
-            atomicAdd(&g_virial[atomi + 3 * nall], s_sxy[0]);
-            atomicAdd(&g_virial[atomi + 4 * nall], s_sxz[0]);
-            atomicAdd(&g_virial[atomi + 5 * nall], s_syz[0]);
-        }
+      if (vflag_either) {
+        atomicAdd(&g_virial[atomi + 0 * nall], s_sxx[0]);
+        atomicAdd(&g_virial[atomi + 1 * nall], s_syy[0]);
+        atomicAdd(&g_virial[atomi + 2 * nall], s_szz[0]);
+        atomicAdd(&g_virial[atomi + 3 * nall], s_sxy[0]);
+        atomicAdd(&g_virial[atomi + 4 * nall], s_sxz[0]);
+        atomicAdd(&g_virial[atomi + 5 * nall], s_syz[0]);
+
+        atomicAdd(&g_virial[atomi + 6 * nall], s_syx[0]);
+        atomicAdd(&g_virial[atomi + 7 * nall], s_szx[0]);
+        atomicAdd(&g_virial[atomi + 8 * nall], s_szy[0]);
+      }
     }
 }
 
@@ -580,6 +608,9 @@ static __global__ void backward_force_2b(
     float s_sxy = 0.0f;
     float s_sxz = 0.0f;
     float s_syz = 0.0f;
+    float s_syx = 0.0f;
+    float s_szx = 0.0f;
+    float s_szy = 0.0f;
 
     float x1 = g_pos[atomi*3  ];
     float y1 = g_pos[atomi*3+1];
@@ -645,9 +676,9 @@ static __global__ void backward_force_2b(
           atomicAdd(&g_virial[n2 + 3 * nall], -r12[0] * f12[1]);
           atomicAdd(&g_virial[n2 + 4 * nall], -r12[0] * f12[2]);
           atomicAdd(&g_virial[n2 + 5 * nall], -r12[1] * f12[2]);
-          // atomicAdd(&g_virial[n2 + 6 * nall], -r12[1] * f12[0]);
-          // atomicAdd(&g_virial[n2 + 7 * nall], -r12[2] * f12[0]);
-          // atomicAdd(&g_virial[n2 + 8 * nall], -r12[2] * f12[1]);
+          atomicAdd(&g_virial[n2 + 6 * nall], -r12[1] * f12[0]);
+          atomicAdd(&g_virial[n2 + 7 * nall], -r12[2] * f12[0]);
+          atomicAdd(&g_virial[n2 + 8 * nall], -r12[2] * f12[1]);
         }
       } else {
         s_fx += f12[0] - f21[0];
@@ -662,9 +693,9 @@ static __global__ void backward_force_2b(
           s_sxz += r12[0] * f21[2];
           s_syz += r12[1] * f21[2];
 
-          // s_syx += r12[1] * f21[0];
-          // s_szx += r12[2] * f21[0];
-          // s_szy += r12[2] * f21[1];
+          s_syx += r12[1] * f21[0];
+          s_szx += r12[2] * f21[0];
+          s_szy += r12[2] * f21[1];
         }
       }
     }
@@ -685,10 +716,10 @@ static __global__ void backward_force_2b(
       g_virial[atomi + 3 * nall] += s_sxy;
       g_virial[atomi + 4 * nall] += s_sxz;
       g_virial[atomi + 5 * nall] += s_syz;
+      g_virial[atomi + 6 * nall] += s_syx;
+      g_virial[atomi + 7 * nall] += s_szx;
+      g_virial[atomi + 8 * nall] += s_szy;
     }
-    // g_virial[atomi + 6 * nall] += s_syx;
-    // g_virial[atomi + 7 * nall] += s_szx;
-    // g_virial[atomi + 8 * nall] += s_szy;
   }
 } 
 
@@ -915,9 +946,9 @@ static __global__ void backward_force_3b_merge(
   float s_sxz = 0.0f;
   float s_syz = 0.0f;
 
-  // float s_syx = 0.0f;
-  // float s_szx = 0.0f;
-  // float s_szy = 0.0f;
+  float s_syx = 0.0f;
+  float s_szx = 0.0f;
+  float s_szy = 0.0f;
   if (n1 < N) {
     int atomi = g_ilist[n1];
     float x1 = g_pos[atomi*3  ];
@@ -969,9 +1000,9 @@ static __global__ void backward_force_3b_merge(
           s_sxz += x12 * f21z;
           s_syz += y12 * f21z;
 
-          // s_syx += y12 * f21x;
-          // s_szx += z12 * f21x;
-          // s_szy += z12 * f21y;
+          s_syx += y12 * f21x;
+          s_szx += z12 * f21x;
+          s_szy += z12 * f21y;
         }
       } else {
         s_fx += f12x;
@@ -987,9 +1018,9 @@ static __global__ void backward_force_3b_merge(
           atomicAdd(&g_virial[n2 + 3 * nall], -r12[0] * f12y);
           atomicAdd(&g_virial[n2 + 4 * nall], -r12[0] * f12z);
           atomicAdd(&g_virial[n2 + 5 * nall], -r12[1] * f12z);
-          // atomicAdd(&g_virial[n2 + 6 * nall], -r12[1] * f12x);
-          // atomicAdd(&g_virial[n2 + 7 * nall], -r12[2] * f12x);
-          // atomicAdd(&g_virial[n2 + 8 * nall], -r12[2] * f12y);
+          atomicAdd(&g_virial[n2 + 6 * nall], -r12[1] * f12x);
+          atomicAdd(&g_virial[n2 + 7 * nall], -r12[2] * f12x);
+          atomicAdd(&g_virial[n2 + 8 * nall], -r12[2] * f12y);
         }
       }
     }
@@ -1009,9 +1040,9 @@ static __global__ void backward_force_3b_merge(
       g_virial[atomi + 3 * nall] += s_sxy;
       g_virial[atomi + 4 * nall] += s_sxz;
       g_virial[atomi + 5 * nall] += s_syz;
-      // g_virial[atomi + 6 * nall] += s_syx;
-      // g_virial[atomi + 7 * nall] += s_szx;
-      // g_virial[atomi + 8 * nall] += s_szy;
+      g_virial[atomi + 6 * nall] += s_syx;
+      g_virial[atomi + 7 * nall] += s_szx;
+      g_virial[atomi + 8 * nall] += s_szy;
     }
   }
 }
@@ -1334,9 +1365,9 @@ static __global__ void backward_force_ZBL(
     float s_sxz = 0.0f;
     float s_syz = 0.0f;
 
-    // float s_syx = 0.0f;
-    // float s_szx = 0.0f;
-    // float s_szy = 0.0f;
+    float s_syx = 0.0f;
+    float s_szx = 0.0f;
+    float s_szy = 0.0f;
     int atomi = g_ilist[n1];
     float x1 = g_pos[atomi*3  ];
     float y1 = g_pos[atomi*3+1];
@@ -1390,9 +1421,9 @@ static __global__ void backward_force_ZBL(
           atomicAdd(&g_virial[n2 + 3 * nall], -r12[0] * f12[1]);
           atomicAdd(&g_virial[n2 + 4 * nall], -r12[0] * f12[2]);
           atomicAdd(&g_virial[n2 + 5 * nall], -r12[1] * f12[2]);
-          // atomicAdd(&g_virial[n2 + 6 * nall], -r12[1] * f12[0]);
-          // atomicAdd(&g_virial[n2 + 7 * nall], -r12[2] * f12[0]);
-          // atomicAdd(&g_virial[n2 + 8 * nall], -r12[2] * f12[1]);
+          atomicAdd(&g_virial[n2 + 6 * nall], -r12[1] * f12[0]);
+          atomicAdd(&g_virial[n2 + 7 * nall], -r12[2] * f12[0]);
+          atomicAdd(&g_virial[n2 + 8 * nall], -r12[2] * f12[1]);
         }
       } else {
         s_fx += f12[0] - f21[0];
@@ -1407,9 +1438,9 @@ static __global__ void backward_force_ZBL(
           s_sxz += r12[0] * f21[2];
           s_syz += r12[1] * f21[2];
 
-          // s_syx += r12[1] * f21[0];
-          // s_szx += r12[2] * f21[0];
-          // s_szy += r12[2] * f21[1];
+          s_syx += r12[1] * f21[0];
+          s_szx += r12[2] * f21[0];
+          s_szy += r12[2] * f21[1];
         }
       }
       s_pe += f * 0.5f;
@@ -1424,9 +1455,9 @@ static __global__ void backward_force_ZBL(
       g_virial[atomi + 3 * nall] += s_sxy;
       g_virial[atomi + 4 * nall] += s_sxz;
       g_virial[atomi + 5 * nall] += s_syz;
-      // g_virial[atomi + 6 * nall] += s_syx;
-      // g_virial[atomi + 7 * nall] += s_szx;
-      // g_virial[atomi + 8 * nall] += s_szy;
+      g_virial[atomi + 6 * nall] += s_syx;
+      g_virial[atomi + 7 * nall] += s_szx;
+      g_virial[atomi + 8 * nall] += s_szy;
     }
     g_pe[atomi] += s_pe;
   }

@@ -16,7 +16,7 @@
 remove 2 funcions from src/utilities/error.cuh
 void print_line_1(void);
 void print_line_2(void);
-  wuxingxing@pwmat.com and MatPL development team. 2026.
+  wuxingxing@pwmat.com and MatPL development team. 2026. Beijing Lonxun Quantum Co.,Ltd.
 ***
 */
 #pragma once

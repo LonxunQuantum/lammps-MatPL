@@ -617,7 +617,6 @@ void NEPKK::set_atom_type_map(int type_nums, const int* type_list){
   atom_type_map.copy_from_host(type_list);
 }
 
-// small box possibly used for active learning:
 void NEPKK::compute(
     int eflag_global,       // energy_total flag
     int eflag_atom,         // ei peratom flag
@@ -650,6 +649,7 @@ void NEPKK::compute(
   if (ff_index == 0) {
     force_per_atom = force_per_atom_lmp; // after calc, copy to f_copy
   } else {
+    vflag_either = 0; // 对模型偏差计算时，其他模型不用计算virial
     force_per_atom = force_per_atom_copy; 
   }
 
@@ -674,7 +674,7 @@ void NEPKK::compute(
 
   // 不能对lammps的原始近邻表排序，可能对一些功能产生错误。
   //增大到64后，占据多了，66.6%，但是速度变慢了一倍。因为驻留线程多了之后造成了更高的内存带宽压力
-  if (USE_SHAREMEM_C2) {//把两体项系数C全部load入共享内存 Ntype*Ntype*(Nmax+1)*(Nbase+1) * 4-float
+  if (USE_SHAREMEM_C2) {//把两体项系数C全部load入共享内存 Ntype*Ntype*(Nmax+1)*(Nbase+1) * 4float
     size_t shared_mem_size = annmb.num_c2 * sizeof(float);
     calc_2b_descriptor_sharemem<<<(inum - 1) / BLOCK_SIZE32 + 1, BLOCK_SIZE32, shared_mem_size>>>(
       paramb,
@@ -760,13 +760,14 @@ void NEPKK::compute(
 
   size_t smem_bytes = 3 * sizeof(float) * BLOCK_SIZE64;  // 力分量 fx,fy,fz
   if (vflag_either) {
-      smem_bytes += 6 * sizeof(float) * BLOCK_SIZE64;    // 维里 6 个分量
+      smem_bytes += 9 * sizeof(float) * BLOCK_SIZE64;    // 维里 9 个分量
   }
   smem_bytes += paramb.n_max_radial_plus1 * sizeof(float);// n_max_radial_plus1 一定是小于线程块大小的
-  // backward_force_2b_perneigh 核函数相比于backward_force_2b 在3090上能获得接近一半的时间减少，但是在4090上反而性能下降
+  // backward_force_2b_perneigh 核函数相比于backward_force_2b 在3090上能获得接近一半的时间减少，但是在4090上反而性能下降 (在highGPU上可能性能区别更明显-需要check)
   // 将中心原子的Fp放入共享内存性能几乎没有提升，块内线程处理每个近邻，导致取Fp地址缺乏连续性（在4090由于L2cache 更大，影响更明显）
   // 这部分优化思路：需要把calc3bfeature这里的粒度拆分，一个块处理一个中心原子，然后写Fp可以按照行优先存储（一个行对应一个中心原子的Fp)\
   // 此时不再存在写Fp的地址不连续问题,并且后续的backward force 可以获得收益 (wuxingxing.2026.2.28)
+
   if (smem_bytes < SHAREMEM_32) {
     backward_force_2b_perneigh<<<inum, BLOCK_SIZE64, smem_bytes>>>(
         vflag_either,
@@ -806,11 +807,11 @@ void NEPKK::compute(
     );
   }
   int shm_float_count = 3 + paramb.dim_angular + paramb.n_max_angular_plus1 * NUM_OF_ABC;
-  shm_float_count += BLOCK_SIZE32 * MAX_NUM_N * 2;// 168个寄存器使用, block 64 会导致共享内存翻倍，驻留block减少
+  shm_float_count += BLOCK_SIZE32 * MAX_NUM_N * 2;// 168个寄存器使用, 64 会导致共享内存翻倍，驻留block减少
   size_t shared_bytes = shm_float_count * sizeof(float);
   if (shared_bytes < SHAREMEM_32) {
     dim3 grid(inum); // 中心原子数
-    dim3 block(BLOCK_SIZE32);
+    dim3 block(BLOCK_SIZE32);// 这里以线程以近邻为粒度，在更大L2cache(3090->4090 or higGPU) 可能也存在类似back2bforce中的问题
     backward_force_3b_per_atom_sharemem<<<grid, block, shared_bytes>>>(
         paramb,
         annmb,
@@ -948,3 +949,4 @@ void NEPKK::compute(
   // printf("======out etot %.15f virial %.15f %.15f %.15f %.15f %.15f %.15f rank %d device %d=======\n", \
     h_etot_virial_global[0], h_etot_virial_global[1], h_etot_virial_global[2], h_etot_virial_global[3], h_etot_virial_global[4], h_etot_virial_global[5], h_etot_virial_global[6], rank, device);
 }
+

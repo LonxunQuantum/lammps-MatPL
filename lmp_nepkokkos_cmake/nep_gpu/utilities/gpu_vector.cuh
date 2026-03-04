@@ -16,7 +16,7 @@
 Compared to the source code(src/utilities/gpu_vector.cuh)
  1. this approach separates method definitions from implementations.
  2. a free() operation has been added to resize().
-  wuxingxing@pwmat.com and MatPL development team. 2026.
+  wuxingxing@pwmat.com and MatPL development team. 2026. Beijing Lonxun Quantum Co.,Ltd.
 ***
 */
 #pragma once
