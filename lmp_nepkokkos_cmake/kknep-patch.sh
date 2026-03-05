@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Check for help option
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    echo "This script is used to copy the MatPL-2026.3 lammps interface files to the corresponding lammps directory:"
+    echo "bash kknep-patch.sh lammps/rootdir"
+    exit 0
+fi
+
 # Check if lammps root directory is provided
 if [ $# -ne 1 ]; then
     echo "Error: Please provide the lammps source directory as an argument"
@@ -109,7 +116,56 @@ if(PKG_NEP_KK)
     ${LAMMPS_SOURCE_DIR}/nep_gpu/utilities
   )
 endif()
-###################################
+
+######################################################################
+# package of DP with KOKKOS
+######################################################################
+if(PKG_MATPLDP)
+  # 1. 查找 PyTorch
+  find_package(Torch REQUIRED)
+  # 2. 链接 PyTorch 库到 LAMMPS 库（使用 PUBLIC 以便传递给可执行文件）
+  target_link_libraries(lammps PUBLIC ${TORCH_LIBRARIES})
+  # 3. 添加包源文件（假设文件位于 src/MATPLDP/ 下）
+  file(GLOB MATPLDP_SOURCES ${LAMMPS_SOURCE_DIR}/MATPLDP/*.cpp)
+  target_sources(lammps PRIVATE ${MATPLDP_SOURCES})
+  # 4. 添加包含目录（如果头文件需要被其他源文件引用）
+  target_include_directories(lammps PRIVATE ${LAMMPS_SOURCE_DIR}/MATPLDP)
+  RegisterStyles(${LAMMPS_SOURCE_DIR}/MATPLDP)
+endif()
+
+######################################################################
+# package of D3
+######################################################################
+if(PKG_MATPLD3)
+  # ==================== CUDA 强制检查（和 NEP_KK 一样） ====================
+  find_package(CUDAToolkit REQUIRED)
+  if(NOT CMAKE_CUDA_COMPILER)
+    message(FATAL_ERROR "PKG_MATPLD3 requires CUDA (nvcc). 请确保 CUDA 已安装！")
+  endif()
+  
+  message(STATUS "PKG_MATPLD3: Building with CUDA (toolkit ${CUDAToolkit_VERSION})")
+
+  file(GLOB MATPLD3_SOURCES ${CONFIGURE_DEPENDS}
+    ${LAMMPS_SOURCE_DIR}/MATPLD3/*.cu
+    ${LAMMPS_SOURCE_DIR}/MATPLD3/*.cpp
+  )
+
+  message(STATUS "LAMMPS_SOURCE_DIR = ${LAMMPS_SOURCE_DIR}")
+  message(STATUS "Looking for MATPLD3 files in: ${LAMMPS_SOURCE_DIR}/MATPLD3")
+  if(MATPLD3_SOURCES)
+    message(STATUS "MATPLD3 sources found: ${MATPLD3_SOURCES}")
+  else()
+    message(FATAL_ERROR "No source files found in ${LAMMPS_SOURCE_DIR}/MATPLD3")
+  endif()
+  target_sources(lammps PRIVATE ${MATPLD3_SOURCES})
+  target_include_directories(lammps PRIVATE 
+    ${LAMMPS_SOURCE_DIR}/MATPLD3
+    ${CUDAToolkit_INCLUDE_DIRS}
+  )
+  RegisterStyles(${LAMMPS_SOURCE_DIR}/MATPLD3)
+endif()
+
+######################################################################
 EOF
 
     # Append the remaining content
@@ -168,6 +224,22 @@ else
     echo "  Warning: KOKKOS directory not found in current directory"
 fi
 
+# Copy MATPLDP and MATPLD3 directories to src/
+echo "Copying MATPLDP and MATPLD3 directories to src/..."
+if [ -d "MATPLDP" ]; then
+    cp -rf MATPLDP "$LAMMPSROOT/src/"
+    echo "  - MATPLDP directory copied successfully"
+else
+    echo "  Warning: MATPLDP directory not found in current directory"
+fi
+
+if [ -d "MATPLD3" ]; then
+    cp -rf MATPLD3 "$LAMMPSROOT/src/"
+    echo "  - MATPLD3 directory copied successfully"
+else
+    echo "  Warning: MATPLD3 directory not found in current directory"
+fi
+
 echo "File copy process completed successfully!"
 echo ""
 echo "Patch process completed successfully!"
@@ -192,3 +264,33 @@ echo "    -DTEST_TIME=ON \\"
 echo "    ../cmake"
 echo ""
 echo "cmake --build . --parallel 4 #(number of parallel compilation cores)"
+echo ""
+echo ""
+echo "If you also need to compile the DP interface, please import the PyTorch path, import the MKL library, and enable the C++ STD17 standard for compilation."
+echo "export Torch_DIR=\$(python -c \"import torch; print(torch.utils.cmake_prefix_path)\")/Torch"
+echo "Then, add the following option in cmake:"
+echo "-DTorch_DIR=\${Torch_DIR} \\"
+echo "-DCMAKE_CXX_STANDARD=17 \\"
+echo "-DPKG_MATPLDP=yes \\"
+echo ""
+echo "For the D3 interface, please add the following option in cmake. Note that D3 requires CUDA support and cannot be used in combination with matpl/nep/kk."
+echo "-DPKG_MATPLD3=yes \\"
+echo ""
+
+######### 手动复制文件 #########
+# # 1. 复制 CPU 相关源文件到 src/
+# cp nep_cpu.cpp nep_cpu.h pair_nep.cpp pair_nep.h <LAMMPSROOT>/src/
+
+# # 2. 复制 nep_gpu 目录（包含 GPU 加速的 NEP 代码）到 src/
+# cp -r nep_gpu <LAMMPSROOT>/src/
+
+# # 3. 复制 KOKKOS 版本的 NEP 文件到 src/KOKKOS/（若目录不存在则先创建）
+# mkdir -p <LAMMPSROOT>/src/KOKKOS
+# cp KOKKOS/pair_nep_kokkos.cpp KOKKOS/pair_nep_kokkos.h <LAMMPSROOT>/src/KOKKOS/
+
+# # 4. 复制 MATPLDP 接口目录到 src/
+# cp -r MATPLDP <LAMMPSROOT>/src/
+
+# # 5. 复制 MATPLD3 接口目录到 src/
+# cp -r MATPLD3 <LAMMPSROOT>/src/
+######### 手动复制文件 #########
