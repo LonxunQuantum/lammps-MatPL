@@ -355,7 +355,7 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
       }
     } else {
       tokens = get_tokens(input);
-      parameters[n] = get_float_from_token(tokens[0], __FILE__, __LINE__);
+      parameters[n] = (float) get_double_from_token(tokens[0], __FILE__, __LINE__);
     }
   }
   nep_data.parameters.resize(annmb.num_para);
@@ -364,7 +364,7 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
 
   for (int d = 0; d < annmb.dim; ++d) {
     tokens = get_tokens(input);
-    paramb.q_scaler[d] = get_float_from_token(tokens[0], __FILE__, __LINE__);
+    paramb.q_scaler[d] = (float) get_double_from_token(tokens[0], __FILE__, __LINE__);
     // std::cout<<"q_scaler " << d << " " << paramb.q_scaler[d] << std::endl;
   }
 
@@ -379,7 +379,7 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
     int num_type_zbl = (paramb.num_types * (paramb.num_types + 1)) / 2;
     for (int d = 0; d < 10 * num_type_zbl; ++d) {
       tokens = get_tokens(input);
-      zbl.para[d] = get_float_from_token(tokens[0], __FILE__, __LINE__);
+      zbl.para[d] = (float) get_double_from_token(tokens[0], __FILE__, __LINE__);
     }
     zbl.num_types = paramb.num_types;
   }
@@ -933,24 +933,4 @@ void NEPKK::compute(
     CUDA_CHECK_KERNEL
     cudaDeviceSynchronize();
   }
-
-  // if(device == 0) {
-  //   std::vector<double> tmp_f(nall * 3);
-  //   std::vector<double> tmp_e(nlocal);
-  //   cudaMemcpy(tmp_f.data(), force_per_atom, sizeof(double) * nall * 3, cudaMemcpyDeviceToHost);
-  //   cudaMemcpy(tmp_e.data(), potential_per_atom_copy, sizeof(double) * nlocal, cudaMemcpyDeviceToHost);
-  //   for (int ii = 0; ii < inum ; ii++) {
-  //     printf(" e[%d][%d] = %f f[%d][%d] = %f %f %f\n", ff_index, ii, tmp_e[ii], ff_index, ii, tmp_f[ii*3], tmp_f[ii*3+1], tmp_f[ii*3+2]);
-  //   }
-  // }
-
-  // copy virial peratom
-  // if (vflag_atom) {
-  //   copyArrayKernel<<<(nall*6 + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(virial_per_atom, nep_data.virial_per_atom.data(), nall*6);
-  //   CUDA_CHECK_KERNEL
-  //   cudaDeviceSynchronize();
-  // }
-
-  // printf("======out etot %.15f virial %.15f %.15f %.15f %.15f %.15f %.15f rank %d device %d=======\n", \
-    h_etot_virial_global[0], h_etot_virial_global[1], h_etot_virial_global[2], h_etot_virial_global[3], h_etot_virial_global[4], h_etot_virial_global[5], h_etot_virial_global[6], rank, device);
 }
