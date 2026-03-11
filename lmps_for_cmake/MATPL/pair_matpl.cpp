@@ -36,7 +36,7 @@ PairMATPL::PairMATPL(LAMMPS *lmp) : Pair(lmp)
     single_enable = 0; 
     // copymode = 0;
     // allocated = 0;
-
+    centroidstressflag = CENTROID_AVAIL;
 }
 
 PairMATPL::~PairMATPL()
