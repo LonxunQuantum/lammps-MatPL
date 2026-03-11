@@ -57,7 +57,9 @@ mkdir -p "$BUILD_DIR"
 # Step 3: Run CMake configuration
 echo "Running CMake configuration with install prefix: $INSTALL_DIR..."
 cd "$BUILD_DIR" || { echo "Error: Cannot enter $BUILD_DIR"; exit 1; }
-cmake ../cmake -C ../cmake/presets/basic.cmake -DCMAKE_PREFIX_PATH=$(python3 -c 'import torch;print(torch.utils.cmake_prefix_path)') -DCMAKE_INSTALL_PREFIX="$INSTALL_DIR"
+cmake ../cmake -C ../cmake/presets/basic.cmake -DCMAKE_INSTALL_PREFIX="$INSTALL_DIR"
+
+# -DCMAKE_PREFIX_PATH=$(python3 -c 'import torch;print(torch.utils.cmake_prefix_path)')
 
 # Step 4: Compile
 echo "Starting compilation..."
