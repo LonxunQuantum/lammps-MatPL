@@ -1948,7 +1948,8 @@ void find_force_angular_for_lammps(
 #endif
   double** g_force,
   double g_total_virial[6],
-  double** g_virial)
+  double** g_virial,
+  int model_index)
 {
   for (int ii = 0; ii < N; ++ii) {
     int n1 = g_ilist[ii];
@@ -2058,7 +2059,7 @@ void find_force_angular_for_lammps(
       g_total_virial[3] -= r12[0] * f12[1]; // xy
       g_total_virial[4] -= r12[0] * f12[2]; // xz
       g_total_virial[5] -= r12[1] * f12[2]; // yz
-      if (g_virial) {                       // only calculate the per-atom virial when required
+      if (g_virial and model_index==0) {                       // only calculate the per-atom virial when required
         g_virial[n2][0] -= r12[0] * f12[0]; // xx
         g_virial[n2][1] -= r12[1] * f12[1]; // yy
         g_virial[n2][2] -= r12[2] * f12[2]; // zz
@@ -2086,7 +2087,8 @@ void find_force_ZBL_for_lammps(
   double g_total_virial[6],
   double** g_virial,
   double& g_total_potential,
-  double* g_potential)
+  double* g_potential,
+  int model_index)
 {
   for (int ii = 0; ii < N; ++ii) {
     int n1 = g_ilist[ii];
@@ -2143,7 +2145,7 @@ void find_force_ZBL_for_lammps(
       g_total_virial[3] -= r12[0] * f12[1]; // xy
       g_total_virial[4] -= r12[0] * f12[2]; // xz
       g_total_virial[5] -= r12[1] * f12[2]; // yz
-      if (g_virial) {                       // only calculate the per-atom virial when required
+      if (g_virial and model_index==0) {                       // only calculate the per-atom virial when required
         g_virial[n2][0] -= r12[0] * f12[0]; // xx
         g_virial[n2][1] -= r12[1] * f12[1]; // yy
         g_virial[n2][2] -= r12[2] * f12[2]; // zz
@@ -3433,10 +3435,10 @@ void NEP3_CPU::compute_for_lammps(
 #ifdef USE_TABLE_FOR_RADIAL_FUNCTIONS
     gn_angular.data(), gnp_angular.data(),
 #endif
-    force, total_virial, virial);
+    force, total_virial, virial, model_index);
   if (zbl.enabled) {
     find_force_ZBL_for_lammps(
-      zbl, N, ilist, NN, NL, type, map_atom_type_idx,  pos, force, total_virial, virial, total_potential, potential);
+      zbl, N, ilist, NN, NL, type, map_atom_type_idx,  pos, force, total_virial, virial, total_potential, potential, model_index);
   }
 }
 

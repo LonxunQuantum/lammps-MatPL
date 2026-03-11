@@ -548,7 +548,7 @@ void PairMATPL::compute(int eflag, int vflag)
         }
         nep_cpu_models[0].compute_for_lammps(
         atom->nlocal, list->inum, list->ilist, list->numneigh, list->firstneigh, atom->type, atom->x,
-        total_potential, total_virial, per_atom_potential, atom->f, per_atom_virial, ff_idx);
+        total_potential, total_virial, per_atom_potential, atom->f, per_atom_virial, 0);
         if (eflag) {
             eng_vdwl += total_potential;
         }
@@ -653,6 +653,7 @@ void PairMATPL::compute(int eflag, int vflag)
         // The atomic types corresponding to the index of neighbors are constantly changing
 
         std::vector<double> cpu_potential_per_atom(list->inum, 0.0);
+        std::vector<double> cpu_virial_per_atom(n_all * 9, 0.0);
         std::vector<double> cpu_force_per_atom(n_all * 3, 0.0);
         std::vector<double> cpu_total_virial(6, 0.0);
 
@@ -678,6 +679,7 @@ void PairMATPL::compute(int eflag, int vflag)
             position_cpu.data(),
             cpu_potential_per_atom.data(), 
             cpu_force_per_atom.data(), 
+            cpu_virial_per_atom.data(),
             cpu_total_virial.data());
         }
         // auto end_compute_large_box_optim = std::chrono::high_resolution_clock::now();
@@ -704,6 +706,19 @@ void PairMATPL::compute(int eflag, int vflag)
         if (eflag_atom) {
             for (int i = 0; i < list->inum; ++i) {
                 per_atom_potential[i] = cpu_potential_per_atom[i];
+            }
+        }
+        if (cvflag_atom) {
+            for (int i = 0; i < n_all; i++) {
+            per_atom_virial[i][0] = cpu_virial_per_atom[i+n_all*0];
+            per_atom_virial[i][1] = cpu_virial_per_atom[i+n_all*1];
+            per_atom_virial[i][2] = cpu_virial_per_atom[i+n_all*2];
+            per_atom_virial[i][3] = cpu_virial_per_atom[i+n_all*3];
+            per_atom_virial[i][4] = cpu_virial_per_atom[i+n_all*4];
+            per_atom_virial[i][5] = cpu_virial_per_atom[i+n_all*5];
+            per_atom_virial[i][6] = cpu_virial_per_atom[i+n_all*6];
+            per_atom_virial[i][7] = cpu_virial_per_atom[i+n_all*7];
+            per_atom_virial[i][8] = cpu_virial_per_atom[i+n_all*8];
             }
         }
         // copy force
@@ -750,6 +765,7 @@ void PairMATPL::compute(int eflag, int vflag)
             }
             std::vector<double> cpu_potential_per_atom(list->inum, 0.0);
             std::vector<double> cpu_force_per_atom(n_all * 3, 0.0);
+            std::vector<double> cpu_virial_per_atom(n_all * 9, 0.0);
             std::vector<double> cpu_total_virial(6, 0.0);
             
             if (nlocal > 0) {//If there is a vacuum layer, in a multi-core, a block of a certain core has no atoms (local atoms are 0, ghost atoms are not 0)
@@ -766,6 +782,7 @@ void PairMATPL::compute(int eflag, int vflag)
                 position_cpu.data(),
                 cpu_potential_per_atom.data(), 
                 cpu_force_per_atom.data(), 
+                cpu_virial_per_atom.data(),
                 cpu_total_virial.data());
             }
 
@@ -799,6 +816,19 @@ void PairMATPL::compute(int eflag, int vflag)
                     f[i][0] = cpu_force_per_atom[i];
                     f[i][1] = cpu_force_per_atom[n_all + i];
                     f[i][2] = cpu_force_per_atom[2*n_all + i];
+                }
+                if (cvflag_atom) {
+                    for (int i = 0; i < n_all; i++) {
+                    per_atom_virial[i][0] = cpu_virial_per_atom[i+n_all*0];
+                    per_atom_virial[i][1] = cpu_virial_per_atom[i+n_all*1];
+                    per_atom_virial[i][2] = cpu_virial_per_atom[i+n_all*2];
+                    per_atom_virial[i][3] = cpu_virial_per_atom[i+n_all*3];
+                    per_atom_virial[i][4] = cpu_virial_per_atom[i+n_all*4];
+                    per_atom_virial[i][5] = cpu_virial_per_atom[i+n_all*5];
+                    per_atom_virial[i][6] = cpu_virial_per_atom[i+n_all*6];
+                    per_atom_virial[i][7] = cpu_virial_per_atom[i+n_all*7];
+                    per_atom_virial[i][8] = cpu_virial_per_atom[i+n_all*8];
+                    }
                 }
             } // if  ff_idx == 0
         } // for ff_idx

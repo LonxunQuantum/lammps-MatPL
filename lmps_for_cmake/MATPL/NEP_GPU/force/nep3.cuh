@@ -170,6 +170,7 @@ public:
     double* position_cpu, // postion of atoms x, [n_all * 3]
     double* cpu_potential_per_atom, // the output of ei
     double* cpu_force_per_atom,     // the output of force
+    double* cpu_virial_per_atom,
     double* cpu_total_virial     // the output of virial
     );
   bool is_gpumd_nep = false;

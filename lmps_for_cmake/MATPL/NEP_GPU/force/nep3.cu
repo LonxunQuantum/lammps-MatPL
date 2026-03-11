@@ -561,6 +561,7 @@ void NEP3::compute_large_box_optim(
   double* position_cpu, // postion of atoms x, [n_all * 3]
   double* cpu_potential_per_atom, // the output of ei
   double* cpu_force_per_atom,     // the output of force
+  double* cpu_virial_per_atom,
   double* cpu_total_virial     // the output of virial
 ) {
   nlocal = N;
@@ -810,7 +811,8 @@ void NEP3::compute_large_box_optim(
   nep_data.total_virial.copy_to_host(cpu_total_virial);
   nep_data.potential_per_atom.copy_to_host(cpu_potential_per_atom);
   nep_data.force_per_atom.copy_to_host(cpu_force_per_atom);
-
+  nep_data.virial_per_atom.copy_to_host(cpu_virial_per_atom);
+  
   // std::vector<double> tmp_viral(n_all * 9);
   // nep_data.virial_per_atom.copy_to_host(tmp_viral.data());
   // for (int ii = 0; ii < N; ii++) {
