@@ -139,7 +139,7 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
       }
     }
     element_atomic_number_list[n] = atomic_number;
-    zbl.cpu_atomic_numbers[n] = static_cast<NEP_FLOAT>(atomic_number);
+    if (zbl.enabled) zbl.cpu_atomic_numbers[n] = static_cast<NEP_FLOAT>(atomic_number);
     if (rank_0) {
       printf("    type %d (%s).\n", n, tokens[2 + n].c_str());
     }
