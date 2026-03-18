@@ -1,0 +1,39 @@
+# Prerequisites
+*.d
+.vscode/*
+lmp_for_cmake/MATPL/NEP_GPU/.vscode
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Generated files
+# EXAMPLES/*
+src/Obj_mpi/.depend
+src/lmp_mpi
+src/lmp_mpi_gpu
