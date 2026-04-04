@@ -46,23 +46,23 @@ The installer will:
 Important:
 
 - this installer is intended for a clean LAMMPS 2026 source tree
-- `MATPL-NEP` does not install the base CPU NEP library
-- you must provide a separate NEP CPU library that defines `pair_nep.h` / `PairNEP` / `matpl/nep`
 - if the tree already contains the old overlay-style KOKKOS files such as `src/nep_gpu/` or `src/KOKKOS/pair_nep_kokkos.cpp`, the installer will stop and ask you to clean those first
 
 ## Typical CMake configure options
 
 ```bash
 cmake -C ../cmake/presets/basic.cmake \
-  -DPKG_MATPL-NEP=yes \
-  -DPKG_KOKKOS=yes \
-  -DKokkos_ENABLE_CUDA=yes \
-  -DKokkos_ENABLE_OPENMP=yes \
-  -DFFT_KOKKOS=CUFFT \
-  ../cmake
+    -DPKG_MESONT=no \
+    -DPKG_JPEG=no \
+    -DPKG_KOKKOS=yes \
+    -DPKG_MATPL-NEP=yes \
+    -DKokkos_ENABLE_CUDA=yes \
+    -DKokkos_ENABLE_OPENMP=yes \
+    -DKokkos_ENABLE_CUDA_LAMBDA=yes \
+    -DFFT_KOKKOS=CUFFT \
+    -DTEST_TIME=ON \
+    ../cmake
 ```
-
-Before configuring, make sure the separate CPU NEP library has already been installed into the same LAMMPS tree so that `pair_nep.h` is visible to the build system.
 
 ## Current input syntax
 

@@ -103,7 +103,3 @@ echo "Typical configure options:"
 echo "  -DPKG_MATPL-NEP=yes"
 echo "  -DPKG_KOKKOS=yes"
 echo "  -DKokkos_ENABLE_CUDA=yes"
-echo
-echo "Reminder:"
-echo "  MATPL-NEP no longer installs the base CPU NEP pair style."
-echo "  You must install a separate NEP CPU library that provides pair_nep.h / matpl/nep."
