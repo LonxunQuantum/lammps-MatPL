@@ -5,23 +5,38 @@ set -euo pipefail
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     echo "Install the MATPL-NEP package tree into a clean LAMMPS 2026 source tree"
     echo "Usage:"
-    echo "  bash install_to_lammps2026.sh /path/to/lammps2026"
+    echo "  bash install_to_lammps2026.sh /path/to/lammps2026 [single|double]"
     exit 0
 fi
 
-if [ $# -ne 1 ]; then
-    echo "Error: please provide the LAMMPS source directory"
-    echo "Usage: $0 /path/to/lammps2026"
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+    echo "Error: please provide the LAMMPS source directory and optional precision mode"
+    echo "Usage: $0 /path/to/lammps2026 [single|double]"
     exit 1
 fi
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 LAMMPSROOT=$1
+PRECISION_MODE=${2:-single}
 CMAKE_FILE="$LAMMPSROOT/cmake/CMakeLists.txt"
 PKG_DST_DIR="$LAMMPSROOT/src/MATPL-NEP"
 PKG_CMAKE_DIR="$LAMMPSROOT/cmake/Modules/Packages"
 PKG_CMAKE_FILE="$PKG_CMAKE_DIR/MATPL-NEP.cmake"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
+case "$PRECISION_MODE" in
+    single)
+        NEP_GPU_SRC_DIR="$SCRIPT_DIR/src/MATPL-NEP/nep_gpu"
+        ;;
+    double)
+        NEP_GPU_SRC_DIR="$SCRIPT_DIR/src/MATPL-NEP/nep_gpu_double"
+        ;;
+    *)
+        echo "Error: unsupported precision mode '$PRECISION_MODE'"
+        echo "Please use 'single' or 'double'."
+        exit 1
+        ;;
+esac
 
 if [ ! -d "$LAMMPSROOT" ]; then
     echo "Error: directory '$LAMMPSROOT' does not exist"
@@ -30,6 +45,11 @@ fi
 
 if [ ! -f "$CMAKE_FILE" ]; then
     echo "Error: '$CMAKE_FILE' not found"
+    exit 1
+fi
+
+if [ ! -d "$NEP_GPU_SRC_DIR" ]; then
+    echo "Error: source NEP GPU directory '$NEP_GPU_SRC_DIR' not found"
     exit 1
 fi
 
@@ -52,6 +72,8 @@ cp "$CMAKE_FILE" "$CMAKE_FILE.bk.$TIMESTAMP"
 
 rm -rf "$PKG_DST_DIR"
 cp -rf "$SCRIPT_DIR/src/MATPL-NEP" "$LAMMPSROOT/src/"
+rm -rf "$PKG_DST_DIR/nep_gpu" "$PKG_DST_DIR/nep_gpu_double"
+cp -rf "$NEP_GPU_SRC_DIR" "$PKG_DST_DIR/nep_gpu"
 cp -f "$SCRIPT_DIR/cmake/Modules/Packages/MATPL-NEP.cmake" "$PKG_CMAKE_FILE"
 
 TMP_FILE=$(mktemp)
@@ -96,6 +118,7 @@ mv "$TMP_FILE" "$CMAKE_FILE"
 
 echo "MATPL-NEP package tree installed successfully."
 echo "Copied package sources to: $PKG_DST_DIR"
+echo "Selected NEP GPU mode: $PRECISION_MODE ($NEP_GPU_SRC_DIR -> $PKG_DST_DIR/nep_gpu)"
 echo "Copied package module to: $PKG_CMAKE_FILE"
 echo "Patched CMake package registration in: $CMAKE_FILE"
 echo
