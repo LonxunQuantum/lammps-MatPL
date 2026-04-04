@@ -520,3 +520,436 @@ cmake --build . -j 4 --target lammps
 2. `reverse_comm`
 3. `nep_gpu` 的邻居列表解释和 ghost atom 路径
 
+## 9. `lmp_nepkokkos_cmake_lmp2026` 的调用语法迁移
+
+这一节对应的是你后来单独复制出来并继续修改的目录：
+
+- `lammps-MatPL/lmp_nepkokkos_cmake_lmp2026`
+
+这一部分和前面 2024 -> 2026 的 KOKKOS 类型适配是两件事：
+
+- 前面解决的是“代码能不能在 LAMMPS 2026 的 KOKKOS 接口下编过”
+- 这里解决的是“这个库的输入语法是不是更符合标准 LAMMPS 用法”
+
+本次迁移后的目标是：
+
+- `pair_style` 只保留真正的 pair style 级选项
+- `pair_coeff` 负责：
+  - 原子类型范围
+  - NEP 势文件路径
+  - 元素映射
+
+也就是把原来“势文件写在 `pair_style` 里”的非标准用法，改成更接近普通 LAMMPS pair style 的形式。
+
+### 9.1 用户输入脚本的变化
+
+#### 单模型
+
+旧语法：
+
+```lammps
+pair_style   matpl/nep/kk  nep.txt
+pair_coeff   * * Hf O
+```
+
+新语法：
+
+```lammps
+pair_style   matpl/nep/kk
+pair_coeff   * * nep.txt Hf O
+```
+
+逐行解释：
+
+- `pair_style   matpl/nep/kk  nep.txt`
+  - 旧逻辑里把势文件 `nep.txt` 直接写在 `pair_style` 后面。
+  - 这是这个库自己实现出来的行为，不是 LAMMPS 常见习惯。
+
+- `pair_coeff   * * Hf O`
+  - 旧逻辑里 `pair_coeff` 只负责元素映射。
+  - 这里并不读取势文件。
+
+- `pair_style   matpl/nep/kk`
+  - 新逻辑里 `pair_style` 只声明样式本身。
+  - 不再在这里接收 `.txt` 势文件。
+
+- `pair_coeff   * * nep.txt Hf O`
+  - 新逻辑里把势文件移动到 `pair_coeff`。
+  - `* *` 仍然表示对全部 LAMMPS atom type 生效。
+  - `nep.txt` 是模型文件。
+  - `Hf O` 是对每个 LAMMPS atom type 的元素映射。
+
+#### 多模型 deviation
+
+旧语法：
+
+```lammps
+pair_style   matpl/nep/kk  nep0.txt nep1.txt nep2.txt nep3.txt out_freq ${DUMP_FREQ} out_file model_devi.out
+pair_coeff   * * Hf O
+```
+
+新语法：
+
+```lammps
+pair_style   matpl/nep/kk  out_freq ${DUMP_FREQ} out_file model_devi.out
+pair_coeff   * * nep0.txt nep1.txt nep2.txt nep3.txt Hf O
+```
+
+逐行解释：
+
+- `pair_style   matpl/nep/kk  nep0.txt ... out_freq ... out_file ...`
+  - 旧逻辑里把“模型列表”和“运行选项”混在 `pair_style` 里一起解析。
+
+- `pair_coeff   * * Hf O`
+  - 旧逻辑里 `pair_coeff` 依然只做元素映射。
+
+- `pair_style   matpl/nep/kk  out_freq ${DUMP_FREQ} out_file model_devi.out`
+  - 新逻辑里 `pair_style` 只保留真正的样式选项：
+    - `out_freq`
+    - `out_file`
+
+- `pair_coeff   * * nep0.txt nep1.txt nep2.txt nep3.txt Hf O`
+  - 新逻辑里把所有模型文件都放进 `pair_coeff`。
+  - 模型文件后面紧跟元素映射。
+
+---
+
+### 9.2 对应修改的代码位置
+
+本次语法迁移只改了这两个文件：
+
+- `lammps-MatPL/lmp_nepkokkos_cmake_lmp2026/KOKKOS/pair_nep_kokkos.cpp`
+- `lammps-MatPL/lmp_nepkokkos_cmake_lmp2026/README.md`
+
+真正的行为变化都在：
+
+- `PairNEPKokkos<DeviceType>::settings()`
+- `PairNEPKokkos<DeviceType>::coeff()`
+
+---
+
+### 9.3 `settings()` 的代码差异与中文解释
+
+迁移前，`settings()` 会直接扫描 `.txt` 文件并加载模型。  
+迁移后，`settings()` 只解析 `out_freq` / `out_file`，并且如果你还把 `.txt` 写在 `pair_style` 里，会明确报错。
+
+#### 关键 diff
+
+```diff
+ void PairNEPKokkos<DeviceType>::settings(int narg, char **arg)
+ {
+   is_rank_0 = (comm->me == 0);
+-  if (narg < 1) error->all(FLERR, "Illegal pair_style command");
+-  int iarg = 0;
+-  num_ff = 0;
+-  while(iarg < narg) {
+-    std::string arg_str(arg[iarg]);
+-    if (arg_str.find(".txt") != std::string::npos) {
+-      potential_files.push_back(arg_str);
+-      num_ff ++;
+-      iarg++;
+-    } else {
+-      break;
+-    }
+-  }
++  rank = comm->me;
++  device_id = -1;
++  num_ff = 0;
++  potential_files.clear();
++  nep_gpu_models.clear();
++  if (explrError_fp != nullptr) {
++    fclose(explrError_fp);
++    explrError_fp = nullptr;
++  }
+   int iarg = 0;
+   while (iarg < narg) {
+     if (strcmp(arg[iarg], "out_freq") == 0) {
++      if (iarg + 1 >= narg) error->all(FLERR, "Missing value for pair_style option out_freq");
+       out_freq = utils::inumeric(FLERR, arg[++iarg], false, lmp);
+     } else if (strcmp(arg[iarg], "out_file") == 0) {
++      if (iarg + 1 >= narg) error->all(FLERR, "Missing value for pair_style option out_file");
+       explrError_fname = arg[++iarg];
++    } else if (std::string(arg[iarg]).find(".txt") != std::string::npos) {
++      error->all(FLERR,
++                 "For pair_style matpl/nep/kk in lmp2026 patch, specify NEP model file(s) in pair_coeff. "
++                 "Example: pair_coeff * * nep.txt Si O");
++    } else {
++      error->all(FLERR, "Unknown pair_style option for matpl/nep/kk: " + std::string(arg[iarg]));
+     }
+     iarg++;
+   }
+-  nep_gpu_models.resize(num_ff);
+-  for (int i=0; i < num_ff; i++) {
+-    ...
+-  }
+ }
+```
+
+#### 逐行解释
+
+- 删除 `if (narg < 1) error->all(...)`
+  - 原因：旧接口默认要求 `pair_style` 后面至少跟一个模型文件。
+  - 现在模型文件已经迁移到 `pair_coeff`，所以这里不能再这样假设。
+
+- 删除 `while(iarg < narg) { ... .txt ... }`
+  - 原因：这一整段就是旧版“从 `pair_style` 中提取模型文件”的实现。
+  - 新接口下不再需要。
+
+- 新增 `rank = comm->me;`
+  - 明确初始化 rank。
+  - 即便还没加载模型，也先把运行环境状态整理好。
+
+- 新增 `device_id = -1;`
+  - 先给设备号一个安全初值。
+  - 后面如果是 device 版本，再调用 `cudaGetDevice()` 更新。
+
+- 新增 `num_ff = 0;`
+  - 重置模型数量。
+  - 表示当前 `settings()` 不负责加载模型，只先把状态清空。
+
+- 新增 `potential_files.clear();`
+  - 清空旧的模型文件列表。
+  - 避免重复调用 `pair_style` 时残留上一次的路径。
+
+- 新增 `nep_gpu_models.clear();`
+  - 清空旧的模型对象容器。
+  - 避免后续 `pair_coeff` 重新加载时混入旧对象。
+
+- 新增关闭 `explrError_fp`
+  - 原因：如果用户重新定义 `pair_style`，旧的 deviation 输出文件句柄也应该一起关闭。
+
+- 新增 `out_freq` 参数值检查
+  - 原因：旧写法里如果忘了给 `out_freq` 填值，报错并不够明确。
+  - 现在会直接提示缺少值。
+
+- 新增 `out_file` 参数值检查
+  - 原因同上。
+
+- 新增 `.txt` 出现在 `pair_style` 时直接报错
+  - 这是迁移里最关键的一行。
+  - 作用是：
+    - 拦截旧用法
+    - 明确告诉用户新用法应该写到 `pair_coeff`
+
+- 新增未知选项报错
+  - 原因：防止拼错参数名时静默通过。
+
+- 删除 `nep_gpu_models.resize(num_ff)` 和后面的 `read_neptxt(...)`
+  - 原因：模型加载职责已经迁移到 `coeff()`。
+
+---
+
+### 9.4 `coeff()` 的代码差异与中文解释
+
+迁移前，`coeff()` 只做元素映射。  
+迁移后，`coeff()` 负责：
+
+- 解析 `* *`
+- 解析一个或多个 `.txt` 模型文件
+- 解析元素映射
+- 加载模型
+- 设置 `setflag` 和 `cutsq`
+
+#### 关键 diff
+
+```diff
+ void PairNEPKokkos<DeviceType>::coeff(int narg, char **arg)
+ {
+   if (!allocated) allocate();
++  if (narg < 4)
++    error->all(FLERR, "Incorrect args for pair coefficients for matpl/nep/kk");
++
++  int ilo, ihi, jlo, jhi;
++  utils::bounds(FLERR, arg[0], 1, atom->ntypes, ilo, ihi, error);
++  utils::bounds(FLERR, arg[1], 1, atom->ntypes, jlo, jhi, error);
++
++  potential_files.clear();
++  num_ff = 0;
++  int iarg = 2;
++  while (iarg < narg) {
++    std::string arg_str(arg[iarg]);
++    if (arg_str.find(".txt") != std::string::npos) {
++      potential_files.push_back(arg_str);
++      ++num_ff;
++      ++iarg;
++    } else {
++      break;
++    }
++  }
++
++  if (num_ff == 0)
++    error->all(FLERR,
++               "pair_coeff for matpl/nep/kk must include at least one NEP model file after the atom type ranges");
++
++  if (iarg >= narg)
++    error->all(FLERR,
++               "pair_coeff for matpl/nep/kk must include element mapping after the NEP model file(s)");
++
++  if (narg - iarg != atom->ntypes)
++    error->all(FLERR,
++               "pair_coeff for matpl/nep/kk must provide one element label for each LAMMPS atom type");
++
++  if (explrError_fp != nullptr) {
++    fclose(explrError_fp);
++    explrError_fp = nullptr;
++  }
++
++  if (is_rank_0 && num_ff > 1) {
++    explrError_fp = fopen(&explrError_fname[0], "w");
++    ...
++  }
++
++  nep_gpu_models.clear();
++  nep_gpu_models.resize(num_ff);
++  for (int i = 0; i < num_ff; i++) {
++    const std::string &model_file = potential_files[i];
++    nep_gpu_models[i].read_neptxt(model_file.c_str(), is_rank_0, comm->me, device_id, i);
++    ...
++  }
++
++  int count = 0;
++  for (int i = ilo; i <= ihi; i++) {
++    for (int j = std::max(jlo, i); j <= jhi; j++) {
++      setflag[i][j] = 1;
++      cutsq[i][j] = cutoffsq;
++      count++;
++    }
++  }
+   for (int f1 = 0; f1 < num_ff; f1++) {
+     std::vector<int> atom_type_module = nep_gpu_models[f1].element_atomic_number_list;
+     std::vector<int> atom_types;
+-    for (int ii = 2; ii < narg; ++ii) {
++    for (int ii = iarg; ii < narg; ++ii) {
+       std::string element = utils::strdup(arg[ii]);
+       int temp = find_atomic_number(element);
+       auto iter = std::find(atom_type_module.begin(), atom_type_module.end(), temp);
+-      if (iter != atom_type_module.end() || arg[ii] == 0)
++      if (iter != atom_type_module.end())
+       {
+         int index = std::distance(atom_type_module.begin(), iter);
+         atom_types.push_back(index);
+       }
+     }
+-    nep_gpu_models[f1].set_atom_type_map(narg-2, atom_types.data());
++    nep_gpu_models[f1].set_atom_type_map(narg - iarg, atom_types.data());
+   }
+ }
+```
+
+#### 逐行解释
+
+- 新增 `if (narg < 4)`
+  - 原因：`pair_coeff` 至少也要长成 `* * nep.txt X`
+  - 这里先做最基本的长度保护。
+
+- 新增 `utils::bounds(...)`
+  - 原因：恢复标准 LAMMPS 对前两个 `pair_coeff` 参数的处理方式。
+  - 也就是让 `arg[0]` 和 `arg[1]` 真正作为 atom type 范围解释。
+
+- 新增 `potential_files.clear();`
+  - 清空旧模型文件列表。
+  - 避免重复定义时残留旧路径。
+
+- 新增 `num_ff = 0;`
+  - 重置模型数量计数器。
+
+- 新增 `int iarg = 2;`
+  - 表示从 `pair_coeff` 的第三个参数开始解析模型文件。
+  - 因为前两个位置已经保留给 `* *` 或类型范围。
+
+- 新增 `while (iarg < narg) { ... .txt ... }`
+  - 这是迁移后的新模型文件解析器。
+  - 它会连续读取一个或多个 `.txt` 文件。
+  - 一旦遇到不是 `.txt` 的 token，就认为后面开始进入元素映射区。
+
+- 新增 `if (num_ff == 0)`
+  - 原因：防止用户忘记写势文件。
+  - 现在势文件不在 `pair_style`，所以这里必须强制检查。
+
+- 新增 `if (iarg >= narg)`
+  - 原因：防止用户只给了势文件，没有给元素映射。
+
+- 新增 `if (narg - iarg != atom->ntypes)`
+  - 原因：强制要求“每个 LAMMPS atom type 都要有一个元素标签”。
+  - 这能提前拦截很多映射错误。
+
+- 新增关闭 `explrError_fp`
+  - 原因：如果重新定义 `pair_coeff`，旧的 deviation 输出句柄也应该被替换。
+
+- 新增多模型时重新打开 `explrError_fp`
+  - 原因：deviation 输出现在和模型文件加载绑定在一起，更合理。
+  - 因为 `num_ff` 现在是在 `coeff()` 中才最终确定。
+
+- 新增 `nep_gpu_models.clear();` 和 `resize(num_ff)`
+  - 原因：在 `coeff()` 中按模型文件个数重新构造模型对象容器。
+
+- 新增 `read_neptxt(...)`
+  - 原因：把模型真正加载动作迁移到 `coeff()`。
+
+- 新增 `setflag[i][j] = 1;`
+  - 原因：恢复标准 LAMMPS pair_coeff 语义。
+  - 表示这些类型对已经被显式设置过参数。
+
+- 新增 `cutsq[i][j] = cutoffsq;`
+  - 原因：在读取第一个模型后，用模型 cutoff 初始化 pair cutoff。
+
+- `for (int ii = 2; ii < narg; ++ii)` -> `for (int ii = iarg; ii < narg; ++ii)`
+  - 原因：旧逻辑假设元素映射从第三个参数就开始。
+  - 新逻辑里第三个参数开始可能先是一串 `.txt` 文件，所以元素映射必须从 `iarg` 之后开始。
+
+- 删除 `|| arg[ii] == 0`
+  - 原因：这并不是一个正确的“元素合法”判断。
+  - 保留它反而会让逻辑变得模糊。
+
+- `set_atom_type_map(narg-2, ...)` -> `set_atom_type_map(narg - iarg, ...)`
+  - 原因：旧写法默认前两个参数之后全是元素映射。
+  - 新写法里前两个参数后面还插入了 `.txt` 文件，所以映射长度必须改成 `narg - iarg`。
+
+---
+
+### 9.5 这次语法迁移带来的直接收益
+
+改完以后，`lmp_nepkokkos_cmake_lmp2026` 这份代码有几个直接好处：
+
+- 更符合普通 LAMMPS 用户习惯
+  - 势文件放在 `pair_coeff`
+  - `pair_style` 只放样式选项
+
+- 错误信息更明确
+  - 如果还按旧写法把 `.txt` 写在 `pair_style`，会直接提示新写法
+  - 如果 `out_freq` / `out_file` 缺值，也会直接提示
+
+- `pair_coeff` 的语义更完整
+  - 类型范围
+  - 势文件
+  - 元素映射
+  都集中在一个地方
+
+- 更容易和别的 pair style 保持一致
+  - 后续别人读这个接口时理解成本更低
+
+---
+
+### 9.6 当前新目录的推荐用法
+
+单模型：
+
+```lammps
+pair_style   matpl/nep/kk
+pair_coeff   * * nep.txt Hf O
+```
+
+多模型 deviation：
+
+```lammps
+pair_style   matpl/nep/kk out_freq ${DUMP_FREQ} out_file model_devi.out
+pair_coeff   * * nep0.txt nep1.txt nep2.txt nep3.txt Hf O
+```
+
+如果仍然写成旧语法：
+
+```lammps
+pair_style   matpl/nep/kk nep.txt
+```
+
+现在会被明确拒绝，并提示把模型文件迁移到 `pair_coeff`。

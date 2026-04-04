@@ -100,36 +100,32 @@ template<class DeviceType>
 void PairNEPKokkos<DeviceType>::settings(int narg, char **arg)
 {
   is_rank_0 = (comm->me == 0);
-
-  if (narg < 1) error->all(FLERR, "Illegal pair_style command");
-  int iarg = 0;  // index of first forcefield file
-  // Parse potential file
+  rank = comm->me;
+  device_id = -1;
   num_ff = 0;
-  while(iarg < narg) { // nep1.txt nep2.txt ... nepn.txt out_freq 10
-    std::string arg_str(arg[iarg]);
-    if (arg_str.find(".txt") != std::string::npos) {
-      potential_files.push_back(arg_str);
-      num_ff ++;
-      iarg++;
-    } else {
-      break; // for out_freq
-    }
+  potential_files.clear();
+  nep_gpu_models.clear();
+  if (explrError_fp != nullptr) {
+    fclose(explrError_fp);
+    explrError_fp = nullptr;
   }
+
+  int iarg = 0;
   while (iarg < narg) {
     if (strcmp(arg[iarg], "out_freq") == 0) {
-        out_freq = utils::inumeric(FLERR, arg[++iarg], false, lmp);
+      if (iarg + 1 >= narg) error->all(FLERR, "Missing value for pair_style option out_freq");
+      out_freq = utils::inumeric(FLERR, arg[++iarg], false, lmp);
     } else if (strcmp(arg[iarg], "out_file") == 0) {
-        explrError_fname = arg[++iarg];
-    } 
-    iarg++;    
-  }
-
-  if (is_rank_0 and num_ff > 1) {
-      explrError_fp = fopen(&explrError_fname[0], "w");
-      fprintf(explrError_fp, "%9s %16s %16s %16s %16s %16s %16s\n", 
-      "#    step", "avg_devi_f", "min_devi_f", "max_devi_f", 
-      "avg_devi_e", "min_devi_e", "max_devi_e");
-      fflush(explrError_fp);
+      if (iarg + 1 >= narg) error->all(FLERR, "Missing value for pair_style option out_file");
+      explrError_fname = arg[++iarg];
+    } else if (std::string(arg[iarg]).find(".txt") != std::string::npos) {
+      error->all(FLERR,
+                 "For pair_style matpl/nep/kk in lmp2026 patch, specify NEP model file(s) in pair_coeff. "
+                 "Example: pair_coeff * * nep.txt Si O");
+    } else {
+      error->all(FLERR, "Unknown pair_style option for matpl/nep/kk: " + std::string(arg[iarg]));
+    }
+    iarg++;
   }
     
   nprocs_total = comm->nprocs;
@@ -148,18 +144,6 @@ void PairNEPKokkos<DeviceType>::settings(int narg, char **arg)
     // }
     // 无需 cudaSetDevice(device_id); // 已由Kokkos设置
   }
-  nep_gpu_models.resize(num_ff);
-  for (int i=0; i < num_ff; i++) {
-    std::string model_file = potential_files[i];
-    nep_gpu_models[i].read_neptxt(model_file.c_str(), is_rank_0, comm->me, device_id, i);
-    if (i == 0) {
-      cutoff = nep_gpu_models[i].paramb.rc_radial;
-      cutoffsq = cutoff * cutoff;
-    }
-    if (is_rank_0) {
-      utils::logmesg(lmp, "NEP Kokkos potential " + model_file + " loaded successfully\n");
-    }
-  }
 }
 
 /* ----------------------------------------------------------------------
@@ -170,15 +154,89 @@ template<class DeviceType>
 void PairNEPKokkos<DeviceType>::coeff(int narg, char **arg)
 {
   if (!allocated) allocate();
+
+  if (narg < 4)
+    error->all(FLERR, "Incorrect args for pair coefficients for matpl/nep/kk");
+
+  int ilo, ihi, jlo, jhi;
+  utils::bounds(FLERR, arg[0], 1, atom->ntypes, ilo, ihi, error);
+  utils::bounds(FLERR, arg[1], 1, atom->ntypes, jlo, jhi, error);
+
+  potential_files.clear();
+  num_ff = 0;
+
+  int iarg = 2;
+  while (iarg < narg) {
+    std::string arg_str(arg[iarg]);
+    if (arg_str.find(".txt") != std::string::npos) {
+      potential_files.push_back(arg_str);
+      ++num_ff;
+      ++iarg;
+    } else {
+      break;
+    }
+  }
+
+  if (num_ff == 0)
+    error->all(FLERR,
+               "pair_coeff for matpl/nep/kk must include at least one NEP model file after the atom type ranges");
+
+  if (iarg >= narg)
+    error->all(FLERR,
+               "pair_coeff for matpl/nep/kk must include element mapping after the NEP model file(s)");
+
+  if (narg - iarg != atom->ntypes)
+    error->all(FLERR,
+               "pair_coeff for matpl/nep/kk must provide one element label for each LAMMPS atom type");
+
+  if (explrError_fp != nullptr) {
+    fclose(explrError_fp);
+    explrError_fp = nullptr;
+  }
+
+  if (is_rank_0 && num_ff > 1) {
+    explrError_fp = fopen(&explrError_fname[0], "w");
+    fprintf(explrError_fp, "%9s %16s %16s %16s %16s %16s %16s\n",
+            "#    step", "avg_devi_f", "min_devi_f", "max_devi_f",
+            "avg_devi_e", "min_devi_e", "max_devi_e");
+    fflush(explrError_fp);
+  }
+
+  nep_gpu_models.clear();
+  nep_gpu_models.resize(num_ff);
+  for (int i = 0; i < num_ff; i++) {
+    const std::string &model_file = potential_files[i];
+    nep_gpu_models[i].read_neptxt(model_file.c_str(), is_rank_0, comm->me, device_id, i);
+    if (i == 0) {
+      cutoff = nep_gpu_models[i].paramb.rc_radial;
+      cutoffsq = cutoff * cutoff;
+    }
+    if (is_rank_0) {
+      utils::logmesg(lmp, "NEP Kokkos potential " + model_file + " loaded successfully\n");
+    }
+  }
+
+  int count = 0;
+  for (int i = ilo; i <= ihi; i++) {
+    for (int j = std::max(jlo, i); j <= jhi; j++) {
+      setflag[i][j] = 1;
+      cutsq[i][j] = cutoffsq;
+      count++;
+    }
+  }
+
+  if (count == 0)
+    error->all(FLERR, "Incorrect args for pair coefficients for matpl/nep/kk");
+
   for (int f1 = 0; f1 < num_ff; f1++) {
     std::vector<int> atom_type_module = nep_gpu_models[f1].element_atomic_number_list;
     std::vector<int> atom_types;
-    for (int ii = 2; ii < narg; ++ii) {
+    for (int ii = iarg; ii < narg; ++ii) {
       std::string element = utils::strdup(arg[ii]);  // LAMMPS提供的安全转换
       int temp = find_atomic_number(element);
       // int temp = std::stoi(arg[ii]);
       auto iter = std::find(atom_type_module.begin(), atom_type_module.end(), temp);   
-      if (iter != atom_type_module.end() || arg[ii] == 0)
+      if (iter != atom_type_module.end())
       {
           int index = std::distance(atom_type_module.begin(), iter);
           // model_atom_type_idx.push_back(index); 
@@ -192,15 +250,7 @@ void PairNEPKokkos<DeviceType>::coeff(int narg, char **arg)
           error->all(FLERR, "This element is not included in the nep file: " + potential_files[f1]);
       }
     }
-    nep_gpu_models[f1].set_atom_type_map(narg-2, atom_types.data());
-  }
-  int ntypes = atom->ntypes;
-  // For NEP, all types are handled by the model; set all pairs
-  for (int i = 1; i <= ntypes; i++) {
-    for (int j = i; j <= ntypes; j++) {
-      setflag[i][j] = 1;
-      cutsq[i][j] = cutoffsq;
-    }
+    nep_gpu_models[f1].set_atom_type_map(narg - iarg, atom_types.data());
   }
 }
 
