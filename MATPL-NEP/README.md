@@ -43,6 +43,12 @@ Run:
 bash install_to_lammps2026.sh /path/to/lammps2026 single
 ```
 
+If you install the double-precision GPU variant, use:
+
+```bash
+bash install_to_lammps2026.sh /path/to/lammps2026 double
+```
+
 The installer will:
 
 - copy `src/USER-NEP/` into the target LAMMPS tree
@@ -79,6 +85,14 @@ cmake -C ../cmake/presets/basic.cmake \
 
 cmake --build . -j N #Number of cores for parallel compilation
 ```
+
+When the `double` MATPL-NEP GPU sources are installed, also add:
+
+```bash
+-DPREC_NEPINFER=ON
+```
+
+Otherwise the CMake cache variable exists, but the CUDA/C++ compile units will still build with the default single-precision NEP inference path.
 
 ## Current input syntax
 

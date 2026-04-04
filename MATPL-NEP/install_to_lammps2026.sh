@@ -164,9 +164,23 @@ echo "Copied package modules to:"
 echo "  $USER_PKG_CMAKE_FILE"
 echo "  $MATPL_PKG_CMAKE_FILE"
 echo "Patched CMake package registration in: $CMAKE_FILE"
+if [ "$PRECISION_MODE" = "double" ]; then
+    echo "Note: configure CMake with -DPREC_NEPINFER=ON for the double-precision MATPL-NEP GPU sources."
+fi
 echo
-echo "Typical configure options:"
-echo "  -DPKG_USER-NEP=yes"
-echo "  -DPKG_MATPL-NEP=yes"
-echo "  -DPKG_KOKKOS=yes"
-echo "  -DKokkos_ENABLE_CUDA=yes"
+
+
+if [ "$PRECISION_MODE" = "single" ]; then
+    echo "Typical configure options (single precision):"
+    echo "  -DPKG_USER-NEP=yes"
+    echo "  -DPKG_MATPL-NEP=yes"
+    echo "  -DPKG_KOKKOS=yes"
+    echo "  -DKokkos_ENABLE_CUDA=yes"
+else
+    echo "Typical configure options (double precision):"
+    echo "  -DPKG_USER-NEP=yes"
+    echo "  -DPKG_MATPL-NEP=yes"
+    echo "  -DPKG_KOKKOS=yes"
+    echo "  -DKokkos_ENABLE_CUDA=yes"
+    echo "  -DPREC_NEPINFER=ON"
+fi

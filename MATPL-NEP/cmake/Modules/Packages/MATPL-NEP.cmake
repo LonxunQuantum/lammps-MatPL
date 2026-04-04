@@ -28,6 +28,11 @@ endif()
 
 set_property(TARGET lammps PROPERTY CUDA_ARCHITECTURES "${MATPL_NEP_CUDA_ARCHITECTURES}")
 
+if(PREC_NEPINFER)
+  target_compile_definitions(lammps PRIVATE PREC_NEPINFER)
+  message(STATUS "MATPL-NEP: enabling PREC_NEPINFER for double-precision NEP inference")
+endif()
+
 RegisterStyles(${MATPL_NEP_SOURCES_DIR}/kokkos)
 
 set(MATPL_NEP_KOKKOS_SOURCES
