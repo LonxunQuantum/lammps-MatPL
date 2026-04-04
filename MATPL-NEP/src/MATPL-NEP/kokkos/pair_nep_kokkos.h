@@ -24,15 +24,18 @@ PairStyle(matpl/nep/kk/host, PairNEPKokkos<LMPHostType>);
 #define LMP_PAIR_NEP_KOKKOS_H
 
 #include "pair_kokkos.h"
-#include "pair_nep.h"
 #include "neigh_list_kokkos.h"
 #include "nepkk.cuh"
+#include <cstdio>
+#include <string>
+#include <tuple>
 #include <utility>
+#include <vector>
 
 namespace LAMMPS_NS {
 
 template<class DeviceType>
-class PairNEPKokkos : public PairNEP {
+class PairNEPKokkos : public Pair {
  public:
   enum {EnabledNeighFlags=HALF|HALFTHREAD|FULL};
   typedef DeviceType device_type;
@@ -49,9 +52,11 @@ class PairNEPKokkos : public PairNEP {
   void init_style() override;
   void allocate();
   int find_atomic_number(std::string& key);
-  int pack_reverse_comm(int, int, double *);
-  void unpack_reverse_comm(int, int *, double *);
-  std::tuple<double, double, double, double, double, double> calc_max_error(const int* ilist, const double* h_full_f, const double* h_full_e, const int num_ff, const int inum, const int nlocal, const int nall, const int rank);
+  int pack_reverse_comm(int, int, double *) override;
+  void unpack_reverse_comm(int, int *, double *) override;
+  std::tuple<double, double, double, double, double, double> calc_max_error(
+      const int* ilist, const double* h_full_f, const double* h_full_e, int num_ff, int inum,
+      int nlocal, int nall, int rank);
  protected:
 
   int me;

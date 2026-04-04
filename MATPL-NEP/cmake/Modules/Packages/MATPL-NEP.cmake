@@ -15,9 +15,24 @@ enable_language(CUDA)
 set_property(TARGET lammps PROPERTY CUDA_STANDARD 17)
 set_property(TARGET lammps PROPERTY CUDA_STANDARD_REQUIRED ON)
 
-set_property(GLOBAL PROPERTY MATPL_NEP_KOKKOS_SOURCES "")
-RegisterStylesExt(${MATPL_NEP_SOURCES_DIR}/kokkos kokkos MATPL_NEP_KOKKOS_SOURCES)
-get_property(MATPL_NEP_KOKKOS_SOURCES GLOBAL PROPERTY MATPL_NEP_KOKKOS_SOURCES)
+if(DEFINED KOKKOS_CUDA_ARCHITECTURES AND NOT "${KOKKOS_CUDA_ARCHITECTURES}" STREQUAL "")
+  set(MATPL_NEP_CUDA_ARCHITECTURES "${KOKKOS_CUDA_ARCHITECTURES}")
+elseif(DEFINED CMAKE_CUDA_ARCHITECTURES AND NOT "${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")
+  set(MATPL_NEP_CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}")
+else()
+  message(FATAL_ERROR
+    "MATPL-NEP needs a CUDA architecture for its .cu sources, but none was provided. "
+    "Please set -DCMAKE_CUDA_ARCHITECTURES=80 (or 86/89/90 as appropriate), "
+    "or enable a Kokkos_ARCH_* option so KOKKOS_CUDA_ARCHITECTURES is populated.")
+endif()
+
+set_property(TARGET lammps PROPERTY CUDA_ARCHITECTURES "${MATPL_NEP_CUDA_ARCHITECTURES}")
+
+RegisterStyles(${MATPL_NEP_SOURCES_DIR}/kokkos)
+
+set(MATPL_NEP_KOKKOS_SOURCES
+  ${MATPL_NEP_SOURCES_DIR}/kokkos/pair_nep_kokkos.cpp
+)
 
 file(GLOB MATPL_NEP_CUDA_SOURCES CONFIGURE_DEPENDS
   ${MATPL_NEP_SOURCES_DIR}/nep_gpu/force/*.cu
@@ -36,4 +51,4 @@ target_include_directories(lammps PRIVATE
   ${MATPL_NEP_SOURCES_DIR}/nep_gpu/utilities
 )
 
-message(STATUS "MATPL-NEP: enabling matpl/nep/kk with KOKKOS + CUDA")
+message(STATUS "MATPL-NEP: enabling matpl/nep/kk with KOKKOS + CUDA (arch=${MATPL_NEP_CUDA_ARCHITECTURES})")

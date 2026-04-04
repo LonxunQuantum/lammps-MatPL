@@ -36,8 +36,13 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 template<class DeviceType>
-PairNEPKokkos<DeviceType>::PairNEPKokkos(LAMMPS *lmp) : PairNEP(lmp)
+PairNEPKokkos<DeviceType>::PairNEPKokkos(LAMMPS *lmp) : Pair(lmp)
 {
+  writedata = 1;
+  comm_reverse = 3;
+  restartinfo = 0;
+  manybody_flag = 1;
+  single_enable = 0;
   respa_enable = 0;
   suffix_flag |= Suffix::KOKKOS;
 
@@ -60,17 +65,19 @@ PairNEPKokkos<DeviceType>::PairNEPKokkos(LAMMPS *lmp) : PairNEP(lmp)
 template<class DeviceType>
 PairNEPKokkos<DeviceType>::~PairNEPKokkos()
 {
-  // printf("=====rank %d device %d doing ~pairnep start copymode %d =====\n", rank, device_id, copymode);
   if (copymode) return;
 
   if (allocated) {
+    memory->destroy(setflag);
+    memory->destroy(cutsq);
     memoryKK->destroy_kokkos(k_eatom, eatom);
     memoryKK->destroy_kokkos(k_vatom, vatom);
   }
+  if (me == 0 && explrError_fp != nullptr) {
+    fclose(explrError_fp);
+    explrError_fp = nullptr;
+  }
   h_etot_virial_global = decltype(h_etot_virial_global)();
-  // printf("=====rank %d device %d doing ~pairnep end =====\n", rank, device_id);
-  // NEP model cleanup if needed
-  // nep_gpu_model.cleanup(); // Assuming NEP has a cleanup method
 }
 
 /* ----------------------------------------------------------------------
@@ -85,12 +92,8 @@ void PairNEPKokkos<DeviceType>::allocate()
 
   memory->create(setflag, n+1, n+1, "pair:setflag");
   memory->create(cutsq, n+1, n+1, "pair:cutsq");
-
-  // for (int i = 1; i <= n; i++) {
-  //   for (int j = i; j <= n; j++) {
-  //     setflag[i][j] = 0;
-  //   }
-  // }
+  for (int i = 1; i <= n; i++)
+    for (int j = i; j <= n; j++) setflag[i][j] = 0;
 }
 /* ----------------------------------------------------------------------
    global settings
@@ -275,7 +278,6 @@ void PairNEPKokkos<DeviceType>::init_style()
   // if (force->newton_pair == 0)
   //   error->all(FLERR,"Pair style matpl/nep/kk requires newton pair on");
   newton_pair = force->newton_pair;
-  printf("===== DEBUG: newton_pair = %d =====\n", newton_pair);
 }
 
 /* ----------------------------------------------------------------------

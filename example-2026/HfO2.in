@@ -14,7 +14,6 @@ atom_style      atomic
 neighbor        1.0 bin
 neigh_modify    delay 10
 
-box              tilt large
 if "${restart} > 0" then "read_restart lmps.restart.*" else "read_data lmp.config"
 change_box       all triclinic
 

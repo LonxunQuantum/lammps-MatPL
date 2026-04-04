@@ -62,6 +62,8 @@ cmake -C ../cmake/presets/basic.cmake \
     -DFFT_KOKKOS=CUFFT \
     -DTEST_TIME=ON \
     ../cmake
+
+cmake --build . -j N #Number of cores for parallel compilation
 ```
 
 ## Current input syntax
