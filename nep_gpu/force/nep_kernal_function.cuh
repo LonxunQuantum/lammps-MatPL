@@ -362,6 +362,7 @@ static __global__ void calc_3b_descriptor(
 
 static __global__ void backward_force_2b_perneigh(
     int vflag_either,
+    int cvflag_atom,
     NEPKK::ParaMB paramb,
     NEPKK::ANN annmb,
     const int nall,
@@ -393,7 +394,9 @@ static __global__ void backward_force_2b_perneigh(
     NEP_FLOAT* s_sxy = nullptr;
     NEP_FLOAT* s_sxz = nullptr;
     NEP_FLOAT* s_syz = nullptr;
-
+    NEP_FLOAT* s_syx = nullptr;
+    NEP_FLOAT* s_szx = nullptr;
+    NEP_FLOAT* s_szy = nullptr;
     int offset = 3 * blockDim.x;  // 已占用 3 个 float 数组
     if (vflag_either) {
         s_sxx = &shared[offset];
@@ -402,6 +405,11 @@ static __global__ void backward_force_2b_perneigh(
         s_sxy = &shared[offset + 3 * blockDim.x];
         s_sxz = &shared[offset + 4 * blockDim.x];
         s_syz = &shared[offset + 5 * blockDim.x];
+        if (cvflag_atom) {
+        s_syx = &shared[offset + 6 * blockDim.x];
+        s_szx = &shared[offset + 7 * blockDim.x];
+        s_szy = &shared[offset + 8 * blockDim.x];          
+        }
     }
     int tid = threadIdx.x;
     int atomi = g_ilist[blockIdx.x];   // 每个 block 处理一个中心原子
@@ -414,6 +422,7 @@ static __global__ void backward_force_2b_perneigh(
     NEP_FLOAT fxi = FLOAT_LIT(0.0), fyi = FLOAT_LIT(0.0), fzi = FLOAT_LIT(0.0);
     NEP_FLOAT sxxi = FLOAT_LIT(0.0), syyi = FLOAT_LIT(0.0), szzi = FLOAT_LIT(0.0);
     NEP_FLOAT sxyi = FLOAT_LIT(0.0), sxzi = FLOAT_LIT(0.0), syzi = FLOAT_LIT(0.0);
+    NEP_FLOAT syxi = FLOAT_LIT(0.0), szxi = FLOAT_LIT(0.0), szyi = FLOAT_LIT(0.0);
 
     int c_start = paramb.num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
     int num_neigh_i = g_NN[atomi];
@@ -478,6 +487,11 @@ static __global__ void backward_force_2b_perneigh(
               atomicAdd(&g_virial[n2 + 3 * nall], -r12[0] * f12[1]);
               atomicAdd(&g_virial[n2 + 4 * nall], -r12[0] * f12[2]);
               atomicAdd(&g_virial[n2 + 5 * nall], -r12[1] * f12[2]);
+              if(cvflag_atom) {
+              atomicAdd(&g_virial[n2 + 6 * nall], -r12[1] * f12[0]);
+              atomicAdd(&g_virial[n2 + 7 * nall], -r12[2] * f12[0]);
+              atomicAdd(&g_virial[n2 + 8 * nall], -r12[2] * f12[1]);
+              }
           }
         } else {
         // 累加到中心原子的寄存器变量
@@ -485,12 +499,17 @@ static __global__ void backward_force_2b_perneigh(
         fyi += f12[1] - f21[1];
         fzi += f12[2] - f21[2];
         if (vflag_either) {
-            sxxi += r12[0] * f21[0];
-            syyi += r12[1] * f21[1];
-            szzi += r12[2] * f21[2];
-            sxyi += r12[0] * f21[1];
-            sxzi += r12[0] * f21[2];
-            syzi += r12[1] * f21[2];
+          sxxi += r12[0] * f21[0];
+          syyi += r12[1] * f21[1];
+          szzi += r12[2] * f21[2];
+          sxyi += r12[0] * f21[1];
+          sxzi += r12[0] * f21[2];
+          syzi += r12[1] * f21[2];
+          if(cvflag_atom) {
+          syxi += r12[1] * f21[0];
+          szxi += r12[2] * f21[0];
+          szyi += r12[2] * f21[1];
+          }
         }
       }
     }
@@ -500,12 +519,17 @@ static __global__ void backward_force_2b_perneigh(
     s_fy[tid] = fyi;
     s_fz[tid] = fzi;
     if (vflag_either) {
-        s_sxx[tid] = sxxi;
-        s_syy[tid] = syyi;
-        s_szz[tid] = szzi;
-        s_sxy[tid] = sxyi;
-        s_sxz[tid] = sxzi;
-        s_syz[tid] = syzi;
+      s_sxx[tid] = sxxi;
+      s_syy[tid] = syyi;
+      s_szz[tid] = szzi;
+      s_sxy[tid] = sxyi;
+      s_sxz[tid] = sxzi;
+      s_syz[tid] = syzi;
+      if(cvflag_atom) {
+      s_syx[tid] = syxi;
+      s_szx[tid] = szxi;
+      s_szy[tid] = szyi;
+      }
     }
     __syncthreads();
 
@@ -522,6 +546,11 @@ static __global__ void backward_force_2b_perneigh(
                 s_sxy[tid] += s_sxy[tid + s];
                 s_sxz[tid] += s_sxz[tid + s];
                 s_syz[tid] += s_syz[tid + s];
+                if(cvflag_atom) {
+                s_syx[tid] = s_syx[tid + s];
+                s_szx[tid] = s_szx[tid + s];
+                s_szy[tid] = s_szy[tid + s];
+                }
             }
         }
         __syncthreads();
@@ -540,12 +569,19 @@ static __global__ void backward_force_2b_perneigh(
             atomicAdd(&g_virial[atomi + 3 * nall], s_sxy[0]);
             atomicAdd(&g_virial[atomi + 4 * nall], s_sxz[0]);
             atomicAdd(&g_virial[atomi + 5 * nall], s_syz[0]);
+            if(cvflag_atom) {
+            atomicAdd(&g_virial[atomi + 6 * nall], s_syx[0]);
+            atomicAdd(&g_virial[atomi + 7 * nall], s_szx[0]);
+            atomicAdd(&g_virial[atomi + 8 * nall], s_szy[0]);
+            }
         }
     }
 }
 
 static __global__ void backward_force_2b(
   int vflag_either,
+  int cvflag_atom,
+  int vatom_num,
   NEPKK::ParaMB paramb,
   NEPKK::ANN annmb,
   const int nall, //all atoms
@@ -576,7 +612,9 @@ static __global__ void backward_force_2b(
     NEP_FLOAT s_sxy = FLOAT_LIT(0.0);
     NEP_FLOAT s_sxz = FLOAT_LIT(0.0);
     NEP_FLOAT s_syz = FLOAT_LIT(0.0);
-
+    NEP_FLOAT s_syx = FLOAT_LIT(0.0);
+    NEP_FLOAT s_szx = FLOAT_LIT(0.0);
+    NEP_FLOAT s_szy = FLOAT_LIT(0.0);
     NEP_FLOAT x1 = g_pos[atomi*3  ];
     NEP_FLOAT y1 = g_pos[atomi*3+1];
     NEP_FLOAT z1 = g_pos[atomi*3+2];
@@ -635,15 +673,17 @@ static __global__ void backward_force_2b(
         atomicAdd(&g_f[n2*3+2], double(-f12[2]));
         
         if(vflag_either) {
-          atomicAdd(&g_virial[n2 + 0 * nall], -r12[0] * f12[0]);
-          atomicAdd(&g_virial[n2 + 1 * nall], -r12[1] * f12[1]);
-          atomicAdd(&g_virial[n2 + 2 * nall], -r12[2] * f12[2]);
-          atomicAdd(&g_virial[n2 + 3 * nall], -r12[0] * f12[1]);
-          atomicAdd(&g_virial[n2 + 4 * nall], -r12[0] * f12[2]);
-          atomicAdd(&g_virial[n2 + 5 * nall], -r12[1] * f12[2]);
-          // atomicAdd(&g_virial[n2 + 6 * nall], -r12[1] * f12[0]);
-          // atomicAdd(&g_virial[n2 + 7 * nall], -r12[2] * f12[0]);
-          // atomicAdd(&g_virial[n2 + 8 * nall], -r12[2] * f12[1]);
+          atomicAdd(&g_virial[n2 * vatom_num + 0], -r12[0] * f12[0]);
+          atomicAdd(&g_virial[n2 * vatom_num + 1], -r12[1] * f12[1]);
+          atomicAdd(&g_virial[n2 * vatom_num + 2], -r12[2] * f12[2]);
+          atomicAdd(&g_virial[n2 * vatom_num + 3], -r12[0] * f12[1]);
+          atomicAdd(&g_virial[n2 * vatom_num + 4], -r12[0] * f12[2]);
+          atomicAdd(&g_virial[n2 * vatom_num + 5], -r12[1] * f12[2]);
+          if(cvflag_atom) {
+          atomicAdd(&g_virial[n2 * vatom_num + 6], -r12[1] * f12[0]);
+          atomicAdd(&g_virial[n2 * vatom_num + 7], -r12[2] * f12[0]);
+          atomicAdd(&g_virial[n2 * vatom_num + 8], -r12[2] * f12[1]);
+          }
         }
       } else {
         s_fx += f12[0] - f21[0];
@@ -657,10 +697,11 @@ static __global__ void backward_force_2b(
           s_sxy += r12[0] * f21[1];
           s_sxz += r12[0] * f21[2];
           s_syz += r12[1] * f21[2];
-
-          // s_syx += r12[1] * f21[0];
-          // s_szx += r12[2] * f21[0];
-          // s_szy += r12[2] * f21[1];
+          if(cvflag_atom) {
+          s_syx += r12[1] * f21[0];
+          s_szx += r12[2] * f21[0];
+          s_szy += r12[2] * f21[1];
+          }
         }
       }
     }
@@ -675,16 +716,18 @@ static __global__ void backward_force_2b(
     // yx yy yz    6 1 5
     // zx zy zz    7 8 2
     if(vflag_either) {
-      g_virial[atomi + 0 * nall] += s_sxx;
-      g_virial[atomi + 1 * nall] += s_syy;
-      g_virial[atomi + 2 * nall] += s_szz;
-      g_virial[atomi + 3 * nall] += s_sxy;
-      g_virial[atomi + 4 * nall] += s_sxz;
-      g_virial[atomi + 5 * nall] += s_syz;
+      g_virial[atomi * vatom_num + 0] += s_sxx;
+      g_virial[atomi * vatom_num + 1] += s_syy;
+      g_virial[atomi * vatom_num + 2] += s_szz;
+      g_virial[atomi * vatom_num + 3] += s_sxy;
+      g_virial[atomi * vatom_num + 4] += s_sxz;
+      g_virial[atomi * vatom_num + 5] += s_syz;
+      if(cvflag_atom) {
+      g_virial[atomi * vatom_num + 6] += s_syx;
+      g_virial[atomi * vatom_num + 7] += s_szx;
+      g_virial[atomi * vatom_num + 8] += s_szy;
+      }
     }
-    // g_virial[atomi + 6 * nall] += s_syx;
-    // g_virial[atomi + 7 * nall] += s_szx;
-    // g_virial[atomi + 8 * nall] += s_szy;
   }
 } 
 
@@ -886,6 +929,8 @@ static __global__ void backward_force_3b_dqnl(
 
 static __global__ void backward_force_3b_merge(
   int vflag_either,
+  int cvflag_atom,
+  int vatom_num,
   const int nall, //all atoms
   const int N,
   const int nlocal,
@@ -909,10 +954,9 @@ static __global__ void backward_force_3b_merge(
   NEP_FLOAT s_sxy = FLOAT_LIT(0.0);
   NEP_FLOAT s_sxz = FLOAT_LIT(0.0);
   NEP_FLOAT s_syz = FLOAT_LIT(0.0);
-
-  // float s_syx = 0.0f;
-  // float s_szx = 0.0f;
-  // float s_szy = 0.0f;
+  NEP_FLOAT s_syx = FLOAT_LIT(0.0);
+  NEP_FLOAT s_szx = FLOAT_LIT(0.0);
+  NEP_FLOAT s_szy = FLOAT_LIT(0.0);
   if (n1 < N) {
     int atomi = g_ilist[n1];
     NEP_FLOAT x1 = g_pos[atomi*3  ];
@@ -963,10 +1007,11 @@ static __global__ void backward_force_3b_merge(
           s_sxy += x12 * f21y;
           s_sxz += x12 * f21z;
           s_syz += y12 * f21z;
-
-          // s_syx += y12 * f21x;
-          // s_szx += z12 * f21x;
-          // s_szy += z12 * f21y;
+          if(cvflag_atom) {
+          s_syx += y12 * f21x;
+          s_szx += z12 * f21x;
+          s_szy += z12 * f21y;
+          }
         }
       } else {
         s_fx += f12x;
@@ -976,15 +1021,17 @@ static __global__ void backward_force_3b_merge(
         atomicAdd(&g_f[n2*3+1], double(-f12y));
         atomicAdd(&g_f[n2*3+2], double(-f12z));
         if(vflag_either) {
-          atomicAdd(&g_virial[n2 + 0 * nall], -r12[0] * f12x);
-          atomicAdd(&g_virial[n2 + 1 * nall], -r12[1] * f12y);
-          atomicAdd(&g_virial[n2 + 2 * nall], -r12[2] * f12z);
-          atomicAdd(&g_virial[n2 + 3 * nall], -r12[0] * f12y);
-          atomicAdd(&g_virial[n2 + 4 * nall], -r12[0] * f12z);
-          atomicAdd(&g_virial[n2 + 5 * nall], -r12[1] * f12z);
-          // atomicAdd(&g_virial[n2 + 6 * nall], -r12[1] * f12x);
-          // atomicAdd(&g_virial[n2 + 7 * nall], -r12[2] * f12x);
-          // atomicAdd(&g_virial[n2 + 8 * nall], -r12[2] * f12y);
+          atomicAdd(&g_virial[n2 * vatom_num + 0], -r12[0] * f12x);
+          atomicAdd(&g_virial[n2 * vatom_num + 1], -r12[1] * f12y);
+          atomicAdd(&g_virial[n2 * vatom_num + 2], -r12[2] * f12z);
+          atomicAdd(&g_virial[n2 * vatom_num + 3], -r12[0] * f12y);
+          atomicAdd(&g_virial[n2 * vatom_num + 4], -r12[0] * f12z);
+          atomicAdd(&g_virial[n2 * vatom_num + 5], -r12[1] * f12z);
+          if(cvflag_atom){
+          atomicAdd(&g_virial[n2 * vatom_num + 6], -r12[1] * f12x);
+          atomicAdd(&g_virial[n2 * vatom_num + 7], -r12[2] * f12x);
+          atomicAdd(&g_virial[n2 * vatom_num + 8], -r12[2] * f12y);
+          }
         }
       }
     }
@@ -998,19 +1045,20 @@ static __global__ void backward_force_3b_merge(
     // yx yy yz    6 1 5
     // zx zy zz    7 8 2
     if(vflag_either) {
-      g_virial[atomi + 0 * nall] += s_sxx;
-      g_virial[atomi + 1 * nall] += s_syy;
-      g_virial[atomi + 2 * nall] += s_szz;
-      g_virial[atomi + 3 * nall] += s_sxy;
-      g_virial[atomi + 4 * nall] += s_sxz;
-      g_virial[atomi + 5 * nall] += s_syz;
-      // g_virial[atomi + 6 * nall] += s_syx;
-      // g_virial[atomi + 7 * nall] += s_szx;
-      // g_virial[atomi + 8 * nall] += s_szy;
+      g_virial[atomi * vatom_num + 0] += s_sxx;
+      g_virial[atomi * vatom_num + 1] += s_syy;
+      g_virial[atomi * vatom_num + 2] += s_szz;
+      g_virial[atomi * vatom_num + 3] += s_sxy;
+      g_virial[atomi * vatom_num + 4] += s_sxz;
+      g_virial[atomi * vatom_num + 5] += s_syz;
+      if(cvflag_atom) {
+      g_virial[atomi * vatom_num + 6] += s_syx;
+      g_virial[atomi * vatom_num + 7] += s_szx;
+      g_virial[atomi * vatom_num + 8] += s_szy;
+      }
     }
   }
 }
-
 __global__ void calculate_total_virial(const double* virial, double* total_virial, int N) {
     __shared__ double shared_virial[6 * 64]; // 使用共享内存存储部分和
     int tid = threadIdx.x;
@@ -1022,14 +1070,14 @@ __global__ void calculate_total_virial(const double* virial, double* total_viria
     }
     __syncthreads();
 
-    // 累加每个原子的virial值
+    // 累加每个原子的virial值（现在为行优先：virial[index * 6 + comp]）
     if (index < N) {
-        atomicAdd(&shared_virial[0 * blockDim.x + tid], virial[0 * N + index]);
-        atomicAdd(&shared_virial[1 * blockDim.x + tid], virial[1 * N + index]);
-        atomicAdd(&shared_virial[2 * blockDim.x + tid], virial[2 * N + index]);
-        atomicAdd(&shared_virial[3 * blockDim.x + tid], virial[3 * N + index]);
-        atomicAdd(&shared_virial[4 * blockDim.x + tid], virial[4 * N + index]);
-        atomicAdd(&shared_virial[5 * blockDim.x + tid], virial[5 * N + index]);
+        atomicAdd(&shared_virial[0 * blockDim.x + tid], virial[index * 6 + 0]);
+        atomicAdd(&shared_virial[1 * blockDim.x + tid], virial[index * 6 + 1]);
+        atomicAdd(&shared_virial[2 * blockDim.x + tid], virial[index * 6 + 2]);
+        atomicAdd(&shared_virial[3 * blockDim.x + tid], virial[index * 6 + 3]);
+        atomicAdd(&shared_virial[4 * blockDim.x + tid], virial[index * 6 + 4]);
+        atomicAdd(&shared_virial[5 * blockDim.x + tid], virial[index * 6 + 5]);
     }
     __syncthreads();
 
@@ -1298,6 +1346,8 @@ write_back:
 
 static __global__ void backward_force_ZBL(
   int vflag_either,
+  int cvflag_atom,
+  int vatom_num,
   const int nall, //all atoms
   const int N,
   const int nlocal,
@@ -1332,9 +1382,9 @@ static __global__ void backward_force_ZBL(
     NEP_FLOAT s_sxz = FLOAT_LIT(0.0);
     NEP_FLOAT s_syz = FLOAT_LIT(0.0);
 
-    // float s_syx = 0.0f;
-    // float s_szx = 0.0f;
-    // float s_szy = 0.0f;
+    NEP_FLOAT s_syx = FLOAT_LIT(0.0);
+    NEP_FLOAT s_szx = FLOAT_LIT(0.0);
+    NEP_FLOAT s_szy = FLOAT_LIT(0.0);
     int atomi = g_ilist[n1];
     NEP_FLOAT x1 = g_pos[atomi*3  ];
     NEP_FLOAT y1 = g_pos[atomi*3+1];
@@ -1382,15 +1432,17 @@ static __global__ void backward_force_ZBL(
         atomicAdd(&g_f[n2*3+1], double(f21[1]));
         atomicAdd(&g_f[n2*3+2], double(f21[2]));
         if (vflag_either) {
-          atomicAdd(&g_virial[n2 + 0 * nall], -r12[0] * f12[0]);
-          atomicAdd(&g_virial[n2 + 1 * nall], -r12[1] * f12[1]);
-          atomicAdd(&g_virial[n2 + 2 * nall], -r12[2] * f12[2]);
-          atomicAdd(&g_virial[n2 + 3 * nall], -r12[0] * f12[1]);
-          atomicAdd(&g_virial[n2 + 4 * nall], -r12[0] * f12[2]);
-          atomicAdd(&g_virial[n2 + 5 * nall], -r12[1] * f12[2]);
-          // atomicAdd(&g_virial[n2 + 6 * nall], -r12[1] * f12[0]);
-          // atomicAdd(&g_virial[n2 + 7 * nall], -r12[2] * f12[0]);
-          // atomicAdd(&g_virial[n2 + 8 * nall], -r12[2] * f12[1]);
+          atomicAdd(&g_virial[n2 * vatom_num + 0], -r12[0] * f12[0]);
+          atomicAdd(&g_virial[n2 * vatom_num + 1], -r12[1] * f12[1]);
+          atomicAdd(&g_virial[n2 * vatom_num + 2], -r12[2] * f12[2]);
+          atomicAdd(&g_virial[n2 * vatom_num + 3], -r12[0] * f12[1]);
+          atomicAdd(&g_virial[n2 * vatom_num + 4], -r12[0] * f12[2]);
+          atomicAdd(&g_virial[n2 * vatom_num + 5], -r12[1] * f12[2]);
+          if(cvflag_atom){
+          atomicAdd(&g_virial[n2 * vatom_num + 6], -r12[1] * f12[0]);
+          atomicAdd(&g_virial[n2 * vatom_num + 7], -r12[2] * f12[0]);
+          atomicAdd(&g_virial[n2 * vatom_num + 8], -r12[2] * f12[1]);
+          }
         }
       } else {
         s_fx += f12[0] - f21[0];
@@ -1404,28 +1456,92 @@ static __global__ void backward_force_ZBL(
           s_sxy += r12[0] * f21[1];
           s_sxz += r12[0] * f21[2];
           s_syz += r12[1] * f21[2];
-
-          // s_syx += r12[1] * f21[0];
-          // s_szx += r12[2] * f21[0];
-          // s_szy += r12[2] * f21[1];
+          if(cvflag_atom){
+          s_syx += r12[1] * f21[0];
+          s_szx += r12[2] * f21[0];
+          s_szy += r12[2] * f21[1];
+          }
         }
       }
-      s_pe += f * FLOAT_LIT(0.5);
+      s_pe += f * 0.5f;
     }
     g_f[atomi*3] += s_fx;
     g_f[atomi*3+1] += s_fy;
     g_f[atomi*3+2] += s_fz;
     if (vflag_either) {
-      g_virial[atomi + 0 * nall] += s_sxx;
-      g_virial[atomi + 1 * nall] += s_syy;
-      g_virial[atomi + 2 * nall] += s_szz;
-      g_virial[atomi + 3 * nall] += s_sxy;
-      g_virial[atomi + 4 * nall] += s_sxz;
-      g_virial[atomi + 5 * nall] += s_syz;
-      // g_virial[atomi + 6 * nall] += s_syx;
-      // g_virial[atomi + 7 * nall] += s_szx;
-      // g_virial[atomi + 8 * nall] += s_szy;
+      g_virial[atomi * vatom_num + 0] += s_sxx;
+      g_virial[atomi * vatom_num + 1] += s_syy;
+      g_virial[atomi * vatom_num + 2] += s_szz;
+      g_virial[atomi * vatom_num + 3] += s_sxy;
+      g_virial[atomi * vatom_num + 4] += s_sxz;
+      g_virial[atomi * vatom_num + 5] += s_syz;
+      if(cvflag_atom){
+      g_virial[atomi * vatom_num + 6] += s_syx;
+      g_virial[atomi * vatom_num + 7] += s_szx;
+      g_virial[atomi * vatom_num + 8] += s_szy;
+      }
     }
     g_pe[atomi] += s_pe;
   }
+}
+
+__global__ void calculate_total_CVirial(const double* virial, double* total_virial, int N) {
+    __shared__ double shared_virial[9 * 64]; // 使用共享内存存储部分和
+    int tid = threadIdx.x;
+    int bid = blockIdx.x;
+    int index = bid * blockDim.x + tid;
+
+    for (int i = 0; i < 9; ++i) {
+        shared_virial[i * blockDim.x + tid] = 0.0;
+    }
+    __syncthreads();
+
+    // 累加每个原子的virial值（现在为行优先：virial[index * 9 + comp]）
+    if (index < N) {
+        atomicAdd(&shared_virial[0 * blockDim.x + tid], virial[index * 9 + 0]);
+        atomicAdd(&shared_virial[1 * blockDim.x + tid], virial[index * 9 + 1]);
+        atomicAdd(&shared_virial[2 * blockDim.x + tid], virial[index * 9 + 2]);
+        atomicAdd(&shared_virial[3 * blockDim.x + tid], virial[index * 9 + 3]);
+        atomicAdd(&shared_virial[4 * blockDim.x + tid], virial[index * 9 + 4]);
+        atomicAdd(&shared_virial[5 * blockDim.x + tid], virial[index * 9 + 5]);
+        atomicAdd(&shared_virial[6 * blockDim.x + tid], virial[index * 9 + 6]);
+        atomicAdd(&shared_virial[7 * blockDim.x + tid], virial[index * 9 + 7]);
+        atomicAdd(&shared_virial[8 * blockDim.x + tid], virial[index * 9 + 8]);
+    }
+    __syncthreads();
+
+    // 归约每个块内的部分和
+    if (tid < 9) {
+        for (int i = 1; i < blockDim.x; ++i) {
+            shared_virial[tid * blockDim.x] += shared_virial[tid * blockDim.x + i];
+        }
+    }
+    __syncthreads();
+
+    // 将每个块的部分和累加到全局内存
+    if (tid < 9) {
+        atomicAdd(&total_virial[tid], shared_virial[tid * blockDim.x]);
+    }
+}
+
+__global__ void virial9To6Kernel(
+    const double* __restrict__ virial9,  // 输入：N*9 的9分量virial数组（顺序：xx,yy,zz,xy,xz,yz,yx,zx,zy）
+    double* __restrict__ virial6,        // 输出：N*6 的6分量virial数组（顺序：xx,yy,zz,xy,xz,yz）
+    size_t N)
+{
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= N) return;
+
+    size_t base9 = i * 9;
+    size_t base6 = i * 6;
+    // =============== 精确映射===============
+    // 9分量顺序： [0]=xx, [1]=yy, [2]=zz, [3]=xy, [4]=xz, [5]=yz, [6]=yx, [7]=zx, [8]=zy
+    // 6分量顺序： [0]=xx, [1]=yy, [2]=zz, [3]=xy, [4]=xz, [5]=yz
+    // =======================================
+    virial6[base6 + 0] = virial9[base9 + 0];  // xx
+    virial6[base6 + 1] = virial9[base9 + 1];  // yy
+    virial6[base6 + 2] = virial9[base9 + 2];  // zz
+    virial6[base6 + 3] = virial9[base9 + 3];  // xy
+    virial6[base6 + 4] = virial9[base9 + 4];  // xz
+    virial6[base6 + 5] = virial9[base9 + 5];  // yz
 }

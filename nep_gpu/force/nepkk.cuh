@@ -154,6 +154,7 @@ public:
     int vflag_either,       // = bool(vfalg_atom or vflag_global)
     int vflag_global,       // virial_global flag
     int vflag_atom,         // virial peratom flag
+    int cvflag_atom,
     int nall,               // nlocal + nghost
     int inum, 
     int nlocal,
@@ -169,6 +170,7 @@ public:
     double* force_per_atom_lmp,      // the output of force
     double* force_per_atom_copy,
     double* virial_per_atom,
+    double* cvirial_per_atom,
     double* h_etot_virial_global // len=7: etot + 6 virials
     );
 
@@ -178,4 +180,5 @@ public:
   int device;
   int rank;
   int ff_index;
+  double* cv_per_atom;
 };

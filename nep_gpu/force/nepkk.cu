@@ -529,7 +529,7 @@ void NEPKK::reset_nep_data(int inum, int nlocal, int nall, int vflag_either) {
         rank, device, max_inum, max_nlocal, max_nall, inum, nlocal, nall, device, rank);
   if (allocate_once==0) {
     nep_data.potential_all.resize(1);
-    nep_data.total_virial.resize(6);
+    nep_data.total_virial.resize(9);
     allocate_once = 1;
   }
 
@@ -637,6 +637,7 @@ void NEPKK::compute(
     int vflag_either,       // = bool(vfalg_atom or vflag_global)
     int vflag_global,       // virial_global flag
     int vflag_atom,         // virial peratom flag
+    int cvflag_atom,
     int nall,               // nlocal + nghost
     int inum, 
     int nlocal,
@@ -652,6 +653,7 @@ void NEPKK::compute(
     double* force_per_atom_lmp,      // the output of force
     double* force_per_atom_copy,
     double* virial_per_atom,
+    double* cvirial_per_atom,
     double* h_etot_virial_global // len=7: etot + 6 virials
 ) {
   int BLOCK_SIZE256 = 256;
@@ -660,12 +662,25 @@ void NEPKK::compute(
   int BLOCK_SIZE32 = 32;
   
   double* force_per_atom;
+  int vatom_num = 6;
   if (ff_index == 0) {
     force_per_atom = force_per_atom_lmp; // after calc, copy to f_copy
+    if (cvflag_atom) {
+      vatom_num = 9;
+      cv_per_atom = cvirial_per_atom; // 9 分量的virial, 计算完毕后，若果vflag_atom is true && ff_idx is 0 需要复制结果到6分量virail
+    } else if (vflag_either) {
+      cv_per_atom = virial_per_atom; // 6 分量的virial
+    } else {
+      cv_per_atom = nullptr; // 本次不写入virial
+    }
   } else {
-    force_per_atom = force_per_atom_copy; 
+    force_per_atom = force_per_atom_copy;
+    cv_per_atom  = nullptr; // 本次不写入virial
+    vflag_either = 0;       // = bool(vfalg_atom or vflag_global)
+    vflag_global = 0;       // virial_global flag
+    vflag_atom   = 0;       // virial peratom flag
+    cvflag_atom  = 0;
   }
-
   reset_nep_data(inum, nlocal, nall, vflag_either);// 初始化NEP辅助数组
 
   // 将double的原子坐标转换为float32 or 64
@@ -778,17 +793,20 @@ void NEPKK::compute(
   }
 
   size_t smem_bytes = 3 * sizeof(NEP_FLOAT) * BLOCK_SIZE64;  // 力分量 fx,fy,fz
-  if (vflag_either) {
-      smem_bytes += 6 * sizeof(NEP_FLOAT) * BLOCK_SIZE64;    // 维里 6 个分量
+  if (cvflag_atom) {
+    smem_bytes += 9 * sizeof(NEP_FLOAT) * BLOCK_SIZE64;    // 维里 9 个分量
+  } else if (vflag_either) {
+    smem_bytes += 6 * sizeof(NEP_FLOAT) * BLOCK_SIZE64;    // 维里 6 个分量
   }
   smem_bytes += paramb.n_max_radial_plus1 * sizeof(NEP_FLOAT);// n_max_radial_plus1 一定是小于线程块大小的
   // backward_force_2b_perneigh 核函数相比于backward_force_2b 在3090上能获得接近一半的时间减少，但是在4090上反而性能下降
   // 将中心原子的Fp放入共享内存性能几乎没有提升，块内线程处理每个近邻，导致取Fp地址缺乏连续性（在4090由于L2cache 更大，影响更明显）
   // 这部分优化思路：需要把calc3bfeature这里的粒度拆分，一个块处理一个中心原子，然后写Fp可以按照行优先存储（一个行对应一个中心原子的Fp)\
   // 此时不再存在写Fp的地址不连续问题,并且后续的backward force 可以获得收益 (wuxingxing.2026.2.28)
-  if (smem_bytes < SHAREMEM_32) {
+  if (0) {//(smem_bytes < SHAREMEM_32) {
     backward_force_2b_perneigh<<<inum, BLOCK_SIZE64, smem_bytes>>>(
         vflag_either,
+        cvflag_atom,
         paramb,
         annmb,
         nall,
@@ -802,12 +820,14 @@ void NEPKK::compute(
         lmp_data.position.data(),
         nep_data.Fp.data(),
         force_per_atom,
-        virial_per_atom
+        cv_per_atom
     );  
   } else {
   // 32 或 64 没什么提升空间-3090
   backward_force_2b<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>( 
     vflag_either,
+    cvflag_atom,
+    vatom_num,
     paramb,
     annmb,
     nall,
@@ -821,13 +841,13 @@ void NEPKK::compute(
     lmp_data.position.data(),
     nep_data.Fp.data(),
     force_per_atom,
-    virial_per_atom
+    cv_per_atom
     );
   }
   int shm_float_count = 3 + paramb.dim_angular + paramb.n_max_angular_plus1 * NUM_OF_ABC;
   shm_float_count += BLOCK_SIZE32 * MAX_NUM_N * 2;// 168个寄存器使用, block 64 会导致共享内存翻倍，驻留block减少
   size_t shared_bytes = shm_float_count * sizeof(NEP_FLOAT);
-  if (shared_bytes < SHAREMEM_32) {
+  if (0) {//(shared_bytes < SHAREMEM_32) {
     dim3 grid(inum); // 中心原子数
     dim3 block(BLOCK_SIZE32);
     backward_force_3b_per_atom_sharemem<<<grid, block, shared_bytes>>>(
@@ -869,6 +889,8 @@ void NEPKK::compute(
 
   backward_force_3b_merge<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>(
     vflag_either,
+    cvflag_atom,
+    vatom_num,
     nall,
     inum,
     nlocal,
@@ -880,13 +902,15 @@ void NEPKK::compute(
     ilist,
     lmp_data.position.data(),
     force_per_atom,
-    virial_per_atom);
+    cv_per_atom);
   CUDA_CHECK_KERNEL
   cudaDeviceSynchronize(); 
 
   if (zbl.enabled) {
     backward_force_ZBL<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>(
       vflag_either,
+      cvflag_atom,
+      vatom_num,
       nall,
       inum,
       nlocal,
@@ -903,13 +927,44 @@ void NEPKK::compute(
       zbl.atomic_numbers.data(),
       zbl.para.data(),
       force_per_atom,
-      virial_per_atom,
+      cv_per_atom,
       nep_data.potential_per_atom.data());
     CUDA_CHECK_KERNEL
   }
 
+  if (cvflag_atom && vflag_global) {
+    calculate_total_CVirial<<<(nall - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>(
+        cv_per_atom, 
+        nep_data.total_virial.data(), 
+        nall); 
+    CUDA_CHECK_KERNEL
+    cudaDeviceSynchronize();
+    nep_data.total_virial.copy_to_host(h_etot_virial_global+1, 9);
+    // printf("CVirialtotal = %f %f %f %f %f %f %f %f %f\n", cpu_virial_glob[0], cpu_virial_glob[1], cpu_virial_glob[2], cpu_virial_glob[3], cpu_virial_glob[4], cpu_virial_glob[5], cpu_virial_glob[6], cpu_virial_glob[7], cpu_virial_glob[8]);
+  }
+
+  // if(cvflag_atom){
+  //   std::vector<double> cpu_virial_tmp(nall * 9);
+  //   std::vector<double> cpu_pos(nall * 9);
+  //   CHECK_CUDA_NEP(cudaMemcpy(cpu_pos.data(), position, sizeof(double) * nall * 3, cudaMemcpyDeviceToHost));
+  //   CHECK_CUDA_NEP(cudaMemcpy(cpu_virial_tmp.data(), cv_per_atom, sizeof(double) * nall * 9, cudaMemcpyDeviceToHost));
+  //   for (int i = 0; i < 20; i++) {
+  //     printf("in nep local pos[%d] =%f %f %f cvirial[%d]=[%f %f %f %f %f %f %f %f %f]\n",
+  //                     i, cpu_pos[i*3+0], cpu_pos[i*3+1], cpu_pos[i*3+2],
+  //                     i, cpu_virial_tmp[i * 9 + 0], cpu_virial_tmp[i * 9 + 1], cpu_virial_tmp[i * 9 + 2], 
+  //                     cpu_virial_tmp[i * 9 + 3], cpu_virial_tmp[i * 9 + 4], cpu_virial_tmp[i * 9 + 5], 
+  //                     cpu_virial_tmp[i * 9 + 6], cpu_virial_tmp[i * 9 + 7], cpu_virial_tmp[i * 9 + 8]);
+  //   }
+  //   for(int i = inum+20; i < inum+40; i++) {
+  //     printf("in nep ghost pos[%d] = %f %f %f cvirial[%d]=[%f %f %f %f %f %f %f %f %f]\n",
+  //                     i, cpu_pos[i*3+0], cpu_pos[i*3+1], cpu_pos[i*3+2],
+  //                     i, cpu_virial_tmp[i * 9 + 0], cpu_virial_tmp[i * 9 + 1], cpu_virial_tmp[i * 9 + 2], 
+  //                     cpu_virial_tmp[i * 9 + 3], cpu_virial_tmp[i * 9 + 4], cpu_virial_tmp[i * 9 + 5], 
+  //                     cpu_virial_tmp[i * 9 + 6], cpu_virial_tmp[i * 9 + 7], cpu_virial_tmp[i * 9 + 8]);
+  //   }
+  // }
   // calculate virial global 后处理，根据需要计算总的virial，这里virial_per_atom 长度为maxatom * 6
-  if (vflag_global) {
+  if (!cvflag_atom && vflag_global) {
     calculate_total_virial<<<(nall - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>(
         virial_per_atom, 
         nep_data.total_virial.data(), 
@@ -917,6 +972,7 @@ void NEPKK::compute(
     CUDA_CHECK_KERNEL
     cudaDeviceSynchronize();
     nep_data.total_virial.copy_to_host(h_etot_virial_global+1, 6);
+    // printf("Virialtotal = %f %f %f %f %f %f\n", h_etot_virial_global[1], h_etot_virial_global[2], h_etot_virial_global[3], h_etot_virial_global[4], h_etot_virial_global[5], h_etot_virial_global[6]);
   }
 
   if (eflag_global) { // 根据需要计算总能，potential_per_atom是每个原子的能量，需要求和

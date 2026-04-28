@@ -49,10 +49,10 @@ class PairNEPKokkos : public PairNEP {
   void init_style() override;
   void allocate();
   int find_atomic_number(std::string& key);
-  int pack_reverse_comm(int, int, double *);
-  void unpack_reverse_comm(int, int *, double *);
-  std::tuple<double, double, double, double, double, double> calc_max_error(const int* ilist, const double* h_full_f, const double* h_full_e, const int num_ff, const int inum, const int nlocal, const int nall, const int rank);
- protected:
+//   int pack_reverse_comm(int, int, double *);
+//   void unpack_reverse_comm(int, int *, double *);
+//   std::tuple<double, double, double, double, double, double> calc_max_error(const int* ilist, const double* h_full_f, const double* h_full_e, const int num_ff, const int inum, const int nlocal, const int nall, const int rank);
+//  protected:
   
   // 坐标和力的一维视图包装器
    Kokkos::View<const double*, DeviceType> get_position_view() {
@@ -104,6 +104,14 @@ class PairNEPKokkos : public PairNEP {
   typename AT::t_int_1d_randomread d_ilist;
   typename AT::t_int_1d_randomread d_numneigh;
   typename AT::t_neighbors_2d d_neighbors;
+
+  int local_maxeatom = 0;
+  int local_maxvatom = 0;
+  int local_maxcvatom = 0;
+  // 手动定义 9 分量 DualView（因为 kokkos_type.h 中没有 tdual_virial9_array）
+  typedef Kokkos::DualView<double*[9], Kokkos::LayoutRight, LMPDeviceType> tdual_virial9_array;
+  tdual_virial9_array k_cvatom;                    // DualView（host + device）
+  typename tdual_virial9_array::t_dev d_cvatom;    // d
   
   int need_dup;
   int neighflag, newton_pair;
