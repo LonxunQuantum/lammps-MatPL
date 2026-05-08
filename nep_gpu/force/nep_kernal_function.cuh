@@ -1179,15 +1179,16 @@ __global__ void convert_atom_types(
     const int nall, 
     const int inum,
     const int nlocal,//对于部分原子受力，ilist长度为inum <= nlocal，itype长度为 nlocal+ghost
-    const int* __restrict__ g_ilist,
-    const int* __restrict__ g_type,
-    const int* __restrict__ type_map, //力场元素类型和结构类型的关系映射
+    const int* __restrict__ g_ilist, //[0, 1, 2, ..., n] len=inum
+    const int* __restrict__ g_type,  //[1, 1, 1, 2, 2, 1,...] such as HfO2, type order same as lmp.config type1 = O, type2=Hf
+    const int* __restrict__ type_map, //atom type order of nep.txt,such as 'nep4 2 Hf O'  in nep.txt -> type_map = [1, 0]
     int* copy_ilist,
     int* cvt_type_map) 
 { 
     int n1 = blockIdx.x * blockDim.x + threadIdx.x;
     if (n1 >= nall) return;
-    int t1 = type_map[g_type[n1]-1];//问题这里g_type 长度为nall？
+    int t1 = type_map[g_type[n1]-1];
+    // if(n1 < inum) printf("atomi %d g_type[%d]=%d, t1=%d\n", n1, n1, g_type[n1], t1);
     cvt_type_map[n1] = t1;
 }
 
@@ -1355,13 +1356,15 @@ static __global__ void backward_force_ZBL(
   const bool zbl_flexibled,
   const NEP_FLOAT zbl_rc_inner,
   const NEP_FLOAT zbl_rc_outer,
+  const bool use_typewise_cutoff_zbl,
+  const NEP_FLOAT typewise_cutoff_zbl_factor,
   const int zbl_num_types,
   const int* g_NN,
   const int* g_NL,
   const int* __restrict__ g_ilist,
   const int* __restrict__ g_type,
   const NEP_FLOAT* __restrict__ g_pos,
-  const NEP_FLOAT* __restrict__ g_atomic_numbers,
+  const int* __restrict__ g_atomic_numbers,
   const NEP_FLOAT* __restrict__ g_para,
   double* g_f,
   double* g_virial,
@@ -1390,7 +1393,7 @@ static __global__ void backward_force_ZBL(
     NEP_FLOAT y1 = g_pos[atomi*3+1];
     NEP_FLOAT z1 = g_pos[atomi*3+2];
     int type1 = g_type[atomi];
-    NEP_FLOAT zi = g_atomic_numbers[type1];
+    int zi = g_atomic_numbers[type1];
     NEP_FLOAT pow_zi = pow(zi, FLOAT_LIT(0.23));
     for (int i1 = 0; i1 < g_NN[atomi]; ++i1) {
       int n2 = g_NL[atomi + nlocal * i1];
@@ -1399,7 +1402,7 @@ static __global__ void backward_force_ZBL(
       NEP_FLOAT d12 = sqrt(r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2]);
       NEP_FLOAT d12inv = FLOAT_LIT(1.0) / d12;
       NEP_FLOAT f, fp;
-      NEP_FLOAT zj = g_atomic_numbers[type2];
+      int zj = g_atomic_numbers[type2];
       NEP_FLOAT a_inv = (pow_zi + pow(zj, FLOAT_LIT(0.23))) * FLOAT_LIT(2.134563);
       NEP_FLOAT zizj = K_C_SP * zi * zj;
       if (zbl_flexibled) {
@@ -1418,7 +1421,12 @@ static __global__ void backward_force_ZBL(
         }
         find_f_and_fp_zbl(ZBL_para, zizj, a_inv, d12, d12inv, f, fp);
       } else {
-        find_f_and_fp_zbl(zizj, a_inv, zbl_rc_inner, zbl_rc_outer, d12, d12inv, f, fp);
+        NEP_FLOAT rc_outer = zbl_rc_outer;
+        if (use_typewise_cutoff_zbl) {
+          // zi and zj start from 1, so need to minus 1 here
+          rc_outer = min((COVALENT_RADIUS[zi - 1] + COVALENT_RADIUS[zj - 1]) * typewise_cutoff_zbl_factor, rc_outer);
+        }
+        find_f_and_fp_zbl(zizj, a_inv, zbl_rc_inner, rc_outer, d12, d12inv, f, fp); // if use typewise_cutoff_zbl_factor, the rc_inner=0.0 when read the nep.txt
       }
       NEP_FLOAT f2 = fp * d12inv * FLOAT_LIT(0.5);
       NEP_FLOAT f12[3] = {r12[0] * f2, r12[1] * f2, r12[2] * f2};

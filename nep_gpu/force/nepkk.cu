@@ -129,7 +129,7 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
     zbl.para.resize(550);
     zbl.atomic_numbers.resize(NUM_ELEMENTS);
   } 
-  element_atomic_number_list.resize(paramb.num_types);
+  cpu_element_atomic_number_list.resize(paramb.num_types);
   for (int n = 0; n < paramb.num_types; ++n) {
     int atomic_number = 0;
     for (int m = 0; m < NUM_ELEMENTS; ++m) {
@@ -138,29 +138,37 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
         break;
       }
     }
-    element_atomic_number_list[n] = atomic_number;
-    if (zbl.enabled) zbl.cpu_atomic_numbers[n] = static_cast<NEP_FLOAT>(atomic_number);
+    cpu_element_atomic_number_list[n] = atomic_number;
+    if (zbl.enabled) zbl.cpu_atomic_numbers[n] = atomic_number;
     if (rank_0) {
-      printf("    type %d (%s).\n", n, tokens[2 + n].c_str());
+      printf("    type %d (%s with Z = %d).\n", n, tokens[2 + n].c_str(), cpu_element_atomic_number_list[n]);
     }
   }
 
-  // zbl 0.7 1.4
+// zbl 1.6 3.2 0.7 #rc_inner rc_outer [zbl_factor]
   if (zbl.enabled) {
     tokens = get_tokens(input);
-    if (tokens.size() != 3) {
-      std::cout << "This line should be zbl rc_inner rc_outer." << std::endl;
+    if (tokens.size() != 3 && tokens.size() != 4) {
+      std::cout << "This line should be zbl rc_inner rc_outer [zbl_factor]." << std::endl;
       exit(1);
     }
     zbl.rc_inner = static_cast<NEP_FLOAT>(get_float_from_token(tokens[1], __FILE__, __LINE__));
     zbl.rc_outer = static_cast<NEP_FLOAT>(get_float_from_token(tokens[2], __FILE__, __LINE__));
-    if (zbl.rc_inner == FLOAT_LIT(0.0) && zbl.rc_outer == FLOAT_LIT(0.0)) {
+    const double ZBL_ZERO_TOL = 1e-9;
+    if (std::fabs(zbl.rc_inner) < ZBL_ZERO_TOL && std::fabs(zbl.rc_outer) < ZBL_ZERO_TOL) {
       zbl.flexibled = true;
       if (rank_0) printf("    has the flexible ZBL potential\n");
     } else {
-      if (rank_0) printf(\
-        "    has the universal ZBL with inner cutoff %g A and outer cutoff %g A.\n",\
-        static_cast<double>(zbl.rc_inner), static_cast<double>(zbl.rc_outer));
+      if (tokens.size() == 4) {
+        paramb.typewise_cutoff_zbl_factor = static_cast<NEP_FLOAT>(get_float_from_token(tokens[3], __FILE__, __LINE__));
+        paramb.use_typewise_cutoff_zbl = true;
+        zbl.rc_inner = FLOAT_LIT(0.0); // when use the typewise: rc_inner = 0.0, rc_outer = max((covalent_radii_I + covalent_radii_J)*zbl_factor, rc_outer)
+        if (rank_0) printf("    has the universal ZBL with typewise cutoff with a factor of %g.\n", paramb.typewise_cutoff_zbl_factor);
+      } else {
+        if (rank_0) printf("    has the universal ZBL with inner cutoff %g A and outer cutoff %g A.\n",
+          zbl.rc_inner,
+          zbl.rc_outer);
+      }
     }
   }
 
@@ -399,7 +407,7 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
 
   USE_SHAREMEM_C2 = SHAREMEM_32 > annmb.num_c2 * sizeof(NEP_FLOAT);
   USE_SHAREMEM_C3 = SHAREMEM_32 > annmb.num_c3 * sizeof(NEP_FLOAT);
-  printf("========= USE_SHAREMEM_C2 %d USE_SHAREMEM_C3 %d PRECISION %d ==========\n", USE_SHAREMEM_C2, USE_SHAREMEM_C3, sizeof(NEP_FLOAT));
+  if (rank_0) printf("========= USE_SHAREMEM_C2 %d USE_SHAREMEM_C3 %d PRECISION %d ==========\n", USE_SHAREMEM_C2, USE_SHAREMEM_C3, sizeof(NEP_FLOAT));
 }
 
 NEPKK::~NEPKK(void)
@@ -699,7 +707,7 @@ void NEPKK::compute(
     ilist,
     itype,
     atom_type_map.data(),
-    lmp_data.ilist.data(),
+    lmp_data.ilist.data(),// noused
     lmp_data.type.data()
     );
   CUDA_CHECK_KERNEL
@@ -918,6 +926,8 @@ void NEPKK::compute(
       zbl.flexibled,
       zbl.rc_inner,
       zbl.rc_outer,
+      paramb.use_typewise_cutoff_zbl,
+      paramb.typewise_cutoff_zbl_factor,
       zbl.num_types,
       nep_data.NN_angular.data(),
       nep_data.NL_angular.data(),

@@ -176,7 +176,7 @@ void PairNEPKokkos<DeviceType>::coeff(int narg, char **arg)
 {
   if (!allocated) allocate();
   for (int f1 = 0; f1 < num_ff; f1++) {
-    std::vector<int> atom_type_module = nep_gpu_models[f1].element_atomic_number_list;
+    std::vector<int> atom_type_module = nep_gpu_models[f1].cpu_element_atomic_number_list;
     std::vector<int> atom_types;
     for (int ii = 2; ii < narg; ++ii) {
       std::string element = utils::strdup(arg[ii]);  // LAMMPS提供的安全转换
@@ -189,8 +189,8 @@ void PairNEPKokkos<DeviceType>::coeff(int narg, char **arg)
           // model_atom_type_idx.push_back(index); 
           // atom_types.push_back(temp);
           atom_types.push_back(index);
-          // printf("=== rank %d device_id %d coeff the config atom type %d index in ff is %d\n",
-          //   rank, device_id, temp, index);
+          // printf("=== rank %d device_id %d coeff the config atom type %d index in ff is %d\n",\
+            rank, device_id, temp, index);
       }
       else
       {
@@ -230,7 +230,7 @@ void PairNEPKokkos<DeviceType>::init_style()
   // if (force->newton_pair == 0)
   //   error->all(FLERR,"Pair style matpl/nep/kk requires newton pair on");
   newton_pair = force->newton_pair;
-  printf("===== DEBUG: newton_pair = %d =====\n", newton_pair);
+  // printf("===== DEBUG: newton_pair = %d =====\n", newton_pair);
 }
 
 /* ----------------------------------------------------------------------

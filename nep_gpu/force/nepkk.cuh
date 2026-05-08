@@ -67,7 +67,9 @@ class NEPKK
 {
 public:
   struct ParaMB {
-    int version = 2; // NEP version, 2 for NEP2 and 3 for NEPKK
+    bool use_typewise_cutoff_zbl = false;
+    NEP_FLOAT typewise_cutoff_zbl_factor = FLOAT_LIT(0.0);
+    int version = 4; // NEP version, 2 for NEP2 and 3 for NEPKK
     int model_type = 0; // 0=potential, 1=dipole, 2=polarizability, 3=temperature-dependent free energy
     NEP_FLOAT rc_radial = FLOAT_LIT(0.0);     // radial cutoff
     NEP_FLOAT rc_angular = FLOAT_LIT(0.0);    // angular cutoff
@@ -114,9 +116,9 @@ public:
     NEP_FLOAT rc_inner = FLOAT_LIT(1.0);
     NEP_FLOAT rc_outer = FLOAT_LIT(2.0);
     std::vector<NEP_FLOAT> cpu_para;
-    std::vector<NEP_FLOAT> cpu_atomic_numbers;
+    std::vector<int> cpu_atomic_numbers;
     GPU_Vector<NEP_FLOAT> para;
-    GPU_Vector<NEP_FLOAT> atomic_numbers;
+    GPU_Vector<int> atomic_numbers;
     int num_types;
   };
 
@@ -134,8 +136,8 @@ public:
   ZBL zbl;
   NEPKK_Data nep_data;
   LMP_Data lmp_data;
-  std::vector<int> element_atomic_number_list;
-  GPU_Vector<int> atom_type_map;
+  std::vector<int> cpu_element_atomic_number_list;
+  GPU_Vector<int> atom_type_map; // 用于结构和力场中的元素顺序不一致时做映射
 
   int max_inum = 0;
   int max_nlocal = 0;
