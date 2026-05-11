@@ -73,6 +73,7 @@ class PairNEPKokkos : public PairNEP {
   int num_ff;
   bool is_rank_0;
   int nprocs_total;
+  int cur_atom_max = 0;
   int global_nall = 0;
   int global_nlocal = 0;
   bool reverse_force = false;
