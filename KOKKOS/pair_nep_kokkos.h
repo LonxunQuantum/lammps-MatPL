@@ -49,10 +49,10 @@ class PairNEPKokkos : public PairNEP {
   void init_style() override;
   void allocate();
   int find_atomic_number(std::string& key);
-//   int pack_reverse_comm(int, int, double *);
-//   void unpack_reverse_comm(int, int *, double *);
-//   std::tuple<double, double, double, double, double, double> calc_max_error(const int* ilist, const double* h_full_f, const double* h_full_e, const int num_ff, const int inum, const int nlocal, const int nall, const int rank);
-//  protected:
+  int pack_reverse_comm(int, int, double *);
+  void unpack_reverse_comm(int, int *, double *);
+  std::tuple<double, double, double, double, double, double> calc_max_error(const int* ilist, const double* h_full_f, const double* h_full_e, const int num_ff, const int inum, const int nlocal, const int nall, const int rank);
+ protected:
   
   // 坐标和力的一维视图包装器
    Kokkos::View<const double*, DeviceType> get_position_view() {

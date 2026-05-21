@@ -145,7 +145,7 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
     }
   }
 
-// zbl 1.6 3.2 0.7 #rc_inner rc_outer [zbl_factor]
+  // zbl 1.6 3.2 0.7 #rc_inner rc_outer [zbl_factor]
   if (zbl.enabled) {
     tokens = get_tokens(input);
     if (tokens.size() != 3 && tokens.size() != 4) {

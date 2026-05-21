@@ -69,7 +69,7 @@ public:
   struct ParaMB {
     bool use_typewise_cutoff_zbl = false;
     NEP_FLOAT typewise_cutoff_zbl_factor = FLOAT_LIT(0.0);
-    int version = 4; // NEP version, 2 for NEP2 and 3 for NEPKK
+    int version = 4; // NEP version
     int model_type = 0; // 0=potential, 1=dipole, 2=polarizability, 3=temperature-dependent free energy
     NEP_FLOAT rc_radial = FLOAT_LIT(0.0);     // radial cutoff
     NEP_FLOAT rc_angular = FLOAT_LIT(0.0);    // angular cutoff
@@ -116,9 +116,9 @@ public:
     NEP_FLOAT rc_inner = FLOAT_LIT(1.0);
     NEP_FLOAT rc_outer = FLOAT_LIT(2.0);
     std::vector<NEP_FLOAT> cpu_para;
-    std::vector<int> cpu_atomic_numbers;
+    std::vector<int> cpu_atomic_numbers; // typewise zbl, as index, should be int
     GPU_Vector<NEP_FLOAT> para;
-    GPU_Vector<int> atomic_numbers;
+    GPU_Vector<int> atomic_numbers; // typewise zbl, as index, should be int
     int num_types;
   };
 
@@ -156,7 +156,7 @@ public:
     int vflag_either,       // = bool(vfalg_atom or vflag_global)
     int vflag_global,       // virial_global flag
     int vflag_atom,         // virial peratom flag
-    int cvflag_atom,
+    int cvflag_atom,        // virial-9 peratom flag
     int nall,               // nlocal + nghost
     int inum, 
     int nlocal,
