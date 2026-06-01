@@ -5,6 +5,7 @@
 #include "../utilities/gpu_vector.cuh"
 #include "nepkk.cuh"
 #include <cmath>
+#include <vector>
 
 __device__ void nepkk_ewald_cross_product(const NEP_FLOAT a[3], const NEP_FLOAT b[3], NEP_FLOAT c[3])
 {
@@ -212,6 +213,34 @@ __global__ void nepkk_zero_mean_charge2(const int N, NEP_FLOAT* g_values)
   }
 }
 
+__global__ void nepkk_subtract_value(const int N, const NEP_FLOAT value, NEP_FLOAT* g_values)
+{
+  int n = blockIdx.x * blockDim.x + threadIdx.x;
+  if (n < N) {
+    g_values[n] -= value;
+  }
+}
+
+inline void nepkk_zero_global_mean_charge2(
+  const int N,
+  const long long natoms_global,
+  NEPKKAllreduceDouble allreduce_double,
+  void* allreduce_context,
+  GPU_Vector<NEP_FLOAT>& values)
+{
+  std::vector<NEP_FLOAT> h_values(N);
+  values.copy_to_host(h_values.data(), N);
+  double local_sum = 0.0;
+  for (int n = 0; n < N; ++n) {
+    local_sum += double(h_values[n]);
+  }
+  double global_sum = 0.0;
+  allreduce_double(&local_sum, &global_sum, 1, allreduce_context);
+  const NEP_FLOAT mean = NEP_FLOAT(global_sum / double(natoms_global));
+  nepkk_subtract_value<<<(N - 1) / 256 + 1, 256>>>(N, mean, values.data());
+  CUDA_CHECK_KERNEL
+}
+
 inline void nepkk_ewald_find_force_charge2(
   const int N,
   const int block_size,
@@ -234,7 +263,10 @@ inline void nepkk_ewald_find_force_charge2(
   double* virial_per_atom,
   const int vflag_either,
   const int cvflag_atom,
-  const int vatom_num)
+  const int vatom_num,
+  const int mpi_size,
+  NEPKKAllreduceDouble allreduce_double,
+  void* allreduce_context)
 {
   nepkk_find_k_and_G_charge2<<<1, 1>>>(
     num_kpoints_max, alpha, alpha_factor, box, num_kpoints.data(), kx.data(), ky.data(), kz.data(), G.data());
@@ -246,6 +278,27 @@ inline void nepkk_ewald_find_force_charge2(
   nepkk_find_structure_factor_charge2<<<k_grid_size, block_size>>>(
     N, cpu_num_kpoints, charge.data(), position.data(), kx.data(), ky.data(), kz.data(), S_real.data(), S_imag.data());
   CUDA_CHECK_KERNEL
+
+  if (mpi_size > 1 && cpu_num_kpoints > 0) {
+    std::vector<NEP_FLOAT> h_S_real(cpu_num_kpoints);
+    std::vector<NEP_FLOAT> h_S_imag(cpu_num_kpoints);
+    S_real.copy_to_host(h_S_real.data(), cpu_num_kpoints);
+    S_imag.copy_to_host(h_S_imag.data(), cpu_num_kpoints);
+
+    std::vector<double> h_local(cpu_num_kpoints * 2);
+    std::vector<double> h_global(cpu_num_kpoints * 2);
+    for (int nk = 0; nk < cpu_num_kpoints; ++nk) {
+      h_local[nk] = double(h_S_real[nk]);
+      h_local[cpu_num_kpoints + nk] = double(h_S_imag[nk]);
+    }
+    allreduce_double(h_local.data(), h_global.data(), int(h_global.size()), allreduce_context);
+    for (int nk = 0; nk < cpu_num_kpoints; ++nk) {
+      h_S_real[nk] = NEP_FLOAT(h_global[nk]);
+      h_S_imag[nk] = NEP_FLOAT(h_global[cpu_num_kpoints + nk]);
+    }
+    S_real.copy_from_host(h_S_real.data(), cpu_num_kpoints);
+    S_imag.copy_from_host(h_S_imag.data(), cpu_num_kpoints);
+  }
 
   nepkk_find_force_charge_reciprocal_space_charge2<<<grid_size, block_size>>>(
     N,

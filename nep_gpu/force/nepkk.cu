@@ -726,6 +726,10 @@ void NEPKK::compute(
     double* cvirial_per_atom,
     const double* box_h,
     const char* kspace_method,
+    long long natoms_global,
+    int mpi_size,
+    NEPKKAllreduceDouble allreduce_double,
+    void* allreduce_context,
     double* h_etot_virial_global // len=7: etot + 6 virials
 ) {
   int BLOCK_SIZE256 = 256;
@@ -879,7 +883,7 @@ void NEPKK::compute(
   smem_bytes += paramb.n_max_radial_plus1 * sizeof(NEP_FLOAT);
 
   if (paramb.charge_mode == 2) {
-    nepkk_zero_mean_charge2<<<1, 1024>>>(nlocal, nep_data.charge.data());
+    nepkk_zero_global_mean_charge2(nlocal, natoms_global, allreduce_double, allreduce_context, nep_data.charge);
     CUDA_CHECK_KERNEL
     const std::string kspace = (kspace_method == nullptr) ? "ewald" : std::string(kspace_method);
     if (kspace != "ewald") {
@@ -908,8 +912,11 @@ void NEPKK::compute(
       cv_per_atom,
       vflag_either,
       cvflag_atom,
-      vatom_num);
-    nepkk_zero_mean_charge2<<<1, 1024>>>(nlocal, nep_data.D_real.data());
+      vatom_num,
+      mpi_size,
+      allreduce_double,
+      allreduce_context);
+    nepkk_zero_global_mean_charge2(nlocal, natoms_global, allreduce_double, allreduce_context, nep_data.D_real);
     CUDA_CHECK_KERNEL
   }
 

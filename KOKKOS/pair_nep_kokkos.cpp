@@ -34,6 +34,14 @@
 
 using namespace LAMMPS_NS;
 
+namespace {
+void nepkk_mpi_allreduce_sum_double(const double* sendbuf, double* recvbuf, int count, void* context)
+{
+  MPI_Comm comm = *static_cast<MPI_Comm*>(context);
+  MPI_Allreduce(sendbuf, recvbuf, count, MPI_DOUBLE, MPI_SUM, comm);
+}
+}
+
 /* ---------------------------------------------------------------------- */
 
 template<class DeviceType>
@@ -178,13 +186,6 @@ void PairNEPKokkos<DeviceType>::settings(int narg, char **arg)
       utils::logmesg(lmp, "NEP Kokkos potential " + model_file + " loaded successfully\n");
     }
   }
-  // if (comm->nprocs > 1) {
-  //   for (int i = 0; i < num_ff; ++i) {
-  //     if (nep_gpu_models[i].paramb.charge_mode == 2) {
-  //       error->all(FLERR, "Pair style matpl/nep/kk qNEP charge_mode=2 currently requires a single MPI rank");
-  //     }
-  //   }
-  // }
 }
 
 /* ----------------------------------------------------------------------
@@ -446,6 +447,7 @@ void PairNEPKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
     0.0,          domain->yprd, domain->yz,
     0.0,          0.0,          domain->zprd
   };
+  MPI_Comm nepkk_mpi_comm = world;
   if (!is_devi_step) {//增加了多模型偏差值计算，不涉及多模型则nep_gpu_models数组只有1个模型
     nep_gpu_models[0].compute(
       eflag_global,
@@ -475,6 +477,10 @@ void PairNEPKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
       cvirial_per_atom_ptr,                          // 9-component centroid virial
       box_h,
       kspace_method.c_str(),
+      static_cast<long long>(atom->natoms),
+      comm->nprocs,
+      nepkk_mpi_allreduce_sum_double,
+      &nepkk_mpi_comm,
       h_etot_virial_global.data()
     );
     // printf("=========end start compute force  etot %f ==========\n", h_etot_virial_global[0]);
@@ -515,6 +521,10 @@ void PairNEPKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
         cvirial_per_atom_ptr,                          // 9-component centroid virial
         box_h,
         kspace_method.c_str(),
+        static_cast<long long>(atom->natoms),
+        comm->nprocs,
+        nepkk_mpi_allreduce_sum_double,
+        &nepkk_mpi_comm,
         h_etot_virial_global.data()
         // neighbor_rebuilt
       );

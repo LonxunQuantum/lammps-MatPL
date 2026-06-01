@@ -36,6 +36,8 @@ In the read_neptxt function for parsing NEP.txt is adapted from the GPUMD source
 #include <utility> // for std::move
 // #include <Kokkos_Core.hpp>
 
+using NEPKKAllreduceDouble = void (*)(const double* sendbuf, double* recvbuf, int count, void* context);
+
 
 struct LMP_Data  {
   GPU_Vector<int> type;
@@ -196,6 +198,10 @@ public:
     double* cvirial_per_atom,
     const double* box_h,
     const char* kspace_method,
+    long long natoms_global,
+    int mpi_size,
+    NEPKKAllreduceDouble allreduce_double,
+    void* allreduce_context,
     double* h_etot_virial_global // len=7: etot + 6 virials
     );
 
