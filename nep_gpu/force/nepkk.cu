@@ -33,6 +33,7 @@ wuxingxing@pwmat.com and MatPL development team. 2026. Beijing Lonxun Quantum Co
 */
 
 #include "nepkk.cuh"
+#include "ewald_nepkk.cuh"
 #include "nep_kernal_function.cuh"
 #include "../utilities/common.cuh"
 #include "../utilities/error.cuh"
@@ -99,6 +100,14 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
     zbl.enabled = false;
   } else if (tokens[0] == "nep4_zbl") {
     paramb.version = 4;
+    zbl.enabled = true;
+  } else if (tokens[0] == "nep4_charge2") {
+    paramb.version = 4;
+    paramb.charge_mode = 2;
+    zbl.enabled = false;
+  } else if (tokens[0] == "nep4_zbl_charge2") {
+    paramb.version = 4;
+    paramb.charge_mode = 2;
     zbl.enabled = true;
   } else if (tokens[0] == "nep5") {
     paramb.model_type = 0;
@@ -186,6 +195,10 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
   }
   paramb.rc_radial_square = paramb.rc_radial * paramb.rc_radial;
   paramb.rc_angular_square = paramb.rc_angular * paramb.rc_angular;
+  if (paramb.charge_mode == 2) {
+    paramb.charge_alpha = NEP_FLOAT(PI) / paramb.rc_radial;
+    paramb.charge_alpha_factor = FLOAT_LIT(0.25) / (paramb.charge_alpha * paramb.charge_alpha);
+  }
   
   if (tokens.size() == 5) {
     int MN_radial = get_int_from_token(tokens[3], __FILE__, __LINE__);
@@ -308,7 +321,9 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
   annmb.num_c2   = paramb.num_types_sq * (paramb.n_max_radial + 1) * (paramb.basis_size_radial + 1);
   annmb.num_c3   = paramb.num_types_sq * (paramb.n_max_angular + 1) * (paramb.basis_size_angular + 1);
   
-  if (paramb.version == 4) {
+  if (paramb.charge_mode == 2) {
+    annmb.num_para_ann = (annmb.dim + 3) * annmb.num_neurons1 * paramb.num_types + 2;
+  } else if (paramb.version == 4) {
     annmb.num_para_ann = (annmb.dim + 2) * annmb.num_neurons1 * paramb.num_types;
   } else { // 5
     annmb.num_para_ann = ((annmb.dim + 2) * annmb.num_neurons1 + 1) * paramb.num_types + 1;
@@ -324,7 +339,9 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
     neplinenums  -= 1; // zbl a b
   }
 
-  if (paramb.num_types == 1) {
+  if (paramb.charge_mode == 2) {
+    is_gpumd_nep = true;
+  } else if (paramb.num_types == 1) {
     is_gpumd_nep = false;
   } else if (paramb.version == 4) {
     if (neplinenums  == (tmp + 1)) {
@@ -338,7 +355,9 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
     }
   }
 
-  if (paramb.version == 4) {
+  if (paramb.charge_mode == 2) {
+    annmb.num_para = annmb.num_para_ann;
+  } else if (paramb.version == 4) {
     annmb.num_para = annmb.num_para_ann + paramb.num_types;
   } else {
     annmb.num_para = annmb.num_para_ann;
@@ -361,7 +380,7 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
   // NN and descriptor parameters
   std::vector<NEP_FLOAT> parameters(annmb.num_para);
   for (int n = 0; n < annmb.num_para; ++n) {
-    if (is_gpumd_nep == true && (n >= annmb.num_para_ann + 1) && (n < annmb.num_para_ann + paramb.num_types)) {
+    if (paramb.charge_mode == 0 && is_gpumd_nep == true && (n >= annmb.num_para_ann + 1) && (n < annmb.num_para_ann + paramb.num_types)) {
       parameters[n] = parameters[annmb.num_para_ann];
       if (rank_0) {
         printf("    copy the last bias parameters[%d]=%f to parameters[%d]=%f \n", 
@@ -538,6 +557,15 @@ void NEPKK::reset_nep_data(int inum, int nlocal, int nall, int vflag_either) {
   if (allocate_once==0) {
     nep_data.potential_all.resize(1);
     nep_data.total_virial.resize(9);
+    if (paramb.charge_mode == 2) {
+      nep_data.num_kpoints.resize(1);
+      nep_data.kx.resize(paramb.num_kpoints_max);
+      nep_data.ky.resize(paramb.num_kpoints_max);
+      nep_data.kz.resize(paramb.num_kpoints_max);
+      nep_data.G.resize(paramb.num_kpoints_max);
+      nep_data.S_real.resize(paramb.num_kpoints_max);
+      nep_data.S_imag.resize(paramb.num_kpoints_max);
+    }
     allocate_once = 1;
   }
 
@@ -556,6 +584,12 @@ void NEPKK::reset_nep_data(int inum, int nlocal, int nall, int vflag_either) {
     
     nep_data.Fp.resize(max_nlocal * annmb.dim);//复用，存储特征值，之后存储能量对特征值导数 dUi/dfeature
     nep_data.sum_fxyz.resize(max_nlocal * (paramb.n_max_angular + 1) * NUM_OF_ABC); //保存三体feature Snlm^i，用于反向求导
+    if (paramb.charge_mode == 2) {
+      nep_data.charge.resize(max_nlocal);
+      nep_data.charge_derivative.resize(max_nlocal * annmb.dim);
+      nep_data.D_real.resize(max_nlocal);
+      nep_data.bec.resize(max_nlocal * 9);
+    }
 
     // nep_data.NN_radial.resize(max_nlocal, 0);
     // nep_data.NL_radial.resize(max_nlocal * paramb.MN_radial, 0);
@@ -586,6 +620,12 @@ void NEPKK::reset_nep_data(int inum, int nlocal, int nall, int vflag_either) {
   // nep_data.f12z.fill(0);
   nep_data.Fp.fill(0); //需要临时存放特征值
   nep_data.sum_fxyz.fill(0); // 直接保存，需要置零
+  if (paramb.charge_mode == 2) {
+    nep_data.charge.fill(FLOAT_LIT(0.0));
+    nep_data.charge_derivative.fill(FLOAT_LIT(0.0));
+    nep_data.D_real.fill(FLOAT_LIT(0.0));
+    nep_data.bec.fill(FLOAT_LIT(0.0));
+  }
 
   nep_data.potential_per_atom.fill(0.0);
   // nep_data.force_per_atom.fill(0.0); 
@@ -599,6 +639,25 @@ void NEPKK::reset_nep_data(int inum, int nlocal, int nall, int vflag_either) {
 void NEPKK::update_potential(NEP_FLOAT* parameters, ANN& ann)
 {
   NEP_FLOAT* pointer = parameters;
+  if (paramb.charge_mode == 2) {
+    const int num_outputs = 2;
+    for (int t = 0; t < paramb.num_types; ++t) {
+      ann.w0[t] = pointer;
+      pointer += ann.num_neurons1 * ann.dim;
+      ann.b0[t] = pointer;
+      pointer += ann.num_neurons1;
+      ann.w1[t] = pointer;
+      pointer += ann.num_neurons1 * num_outputs;
+    }
+    ann.sqrt_epsilon_inf = pointer;
+    pointer += 1;
+    ann.b1 = pointer;
+    pointer += 1;
+    ann.c = pointer;
+    convert_C(ann.c, paramb.num_types, paramb.n_max_radial, paramb.basis_size_radial);
+    convert_C(ann.c + ann.num_c2, paramb.num_types, paramb.n_max_angular, paramb.basis_size_angular);
+    return;
+  }
   for (int t = 0; t < paramb.num_types; ++t) {
     if (t > 0 && paramb.version == 3) { // Use the same set of NN parameters for NEP2 and NEPKK_CPU
       pointer -= (ann.dim + 2) * ann.num_neurons1;
@@ -665,6 +724,8 @@ void NEPKK::compute(
     double* force_per_atom_copy,
     double* virial_per_atom,
     double* cvirial_per_atom,
+    const double* box_h,
+    const char* kspace_method,
     double* h_etot_virial_global // len=7: etot + 6 virials
 ) {
   int BLOCK_SIZE256 = 256;
@@ -693,6 +754,10 @@ void NEPKK::compute(
     cvflag_atom  = 0;
   }
   reset_nep_data(inum, nlocal, nall, vflag_either);// 初始化NEP辅助数组
+  NEPKK_Box box;
+  for (int d = 0; d < 9; ++d) {
+    box.h[d] = box_h[d];
+  }
 
   // 将double的原子坐标转换为float32 or 64
   doubleTofloat<<<(nall*3 + BLOCK_SIZE256 - 1) / BLOCK_SIZE256, BLOCK_SIZE256>>>(
@@ -782,6 +847,8 @@ void NEPKK::compute(
       lmp_data.position.data(),
       nep_data.Fp.data(),
       nep_data.potential_per_atom.data(),
+      nep_data.charge.data(),
+      nep_data.charge_derivative.data(),
       nep_data.sum_fxyz.data());
     CUDA_CHECK_KERNEL
   } else {// 不使用共享内存的版本，系数C直接从全局内存中读取
@@ -799,20 +866,54 @@ void NEPKK::compute(
       lmp_data.position.data(),
       nep_data.Fp.data(),
       nep_data.potential_per_atom.data(),
+      nep_data.charge.data(),
+      nep_data.charge_derivative.data(),
       nep_data.sum_fxyz.data());
     CUDA_CHECK_KERNEL
   }
 
-  size_t smem_bytes = 3 * sizeof(NEP_FLOAT) * BLOCK_SIZE64;  // 力分量 fx,fy,fz
+  size_t smem_bytes = 3 * sizeof(NEP_FLOAT) * BLOCK_SIZE64;  // force components fx, fy, fz
   if (vflag_either) {
       smem_bytes += vatom_num * sizeof(NEP_FLOAT) * BLOCK_SIZE64;    // virial: 6 or 9 components
   }
-  smem_bytes += paramb.n_max_radial_plus1 * sizeof(NEP_FLOAT);// n_max_radial_plus1 一定是小于线程块大小的
-  // backward_force_2b_perneigh 核函数相比于backward_force_2b 在3090上能获得接近一半的时间减少，但是在4090上反而性能下降
-  // 将中心原子的Fp放入共享内存性能几乎没有提升，块内线程处理每个近邻，导致取Fp地址缺乏连续性（在4090由于L2cache 更大，影响更明显）
-  // 这部分优化思路：需要把calc3bfeature这里的粒度拆分，一个块处理一个中心原子，然后写Fp可以按照行优先存储（一个行对应一个中心原子的Fp)\
-  // 此时不再存在写Fp的地址不连续问题,并且后续的backward force 可以获得收益 (wuxingxing.2026.2.28)
-  if (smem_bytes < SHAREMEM_32) {
+  smem_bytes += paramb.n_max_radial_plus1 * sizeof(NEP_FLOAT);
+
+  if (paramb.charge_mode == 2) {
+    nepkk_zero_mean_charge2<<<1, 1024>>>(nlocal, nep_data.charge.data());
+    CUDA_CHECK_KERNEL
+    const std::string kspace = (kspace_method == nullptr) ? "ewald" : std::string(kspace_method);
+    if (kspace != "ewald") {
+      std::cout << "NEPKK charge_mode=2 currently supports kspace_method=ewald, got " << kspace << std::endl;
+      exit(1);
+    }
+    nepkk_ewald_find_force_charge2(
+      nlocal,
+      BLOCK_SIZE64,
+      (nlocal - 1) / BLOCK_SIZE64 + 1,
+      paramb.num_kpoints_max,
+      paramb.charge_alpha,
+      paramb.charge_alpha_factor,
+      box,
+      nep_data.charge,
+      lmp_data.position,
+      nep_data.num_kpoints,
+      nep_data.kx,
+      nep_data.ky,
+      nep_data.kz,
+      nep_data.G,
+      nep_data.S_real,
+      nep_data.S_imag,
+      nep_data.D_real,
+      force_per_atom,
+      cv_per_atom,
+      vflag_either,
+      cvflag_atom,
+      vatom_num);
+    nepkk_zero_mean_charge2<<<1, 1024>>>(nlocal, nep_data.D_real.data());
+    CUDA_CHECK_KERNEL
+  }
+
+  if (paramb.charge_mode != 2 && smem_bytes < SHAREMEM_32) {
     backward_force_2b_perneigh<<<inum, BLOCK_SIZE64, smem_bytes>>>(
         vflag_either,
         cvflag_atom,
@@ -831,34 +932,35 @@ void NEPKK::compute(
         nep_data.Fp.data(),
         force_per_atom,
         virial_per_atom
-    );  
-  } else {
-  // 32 或 64 没什么提升空间-3090
-  backward_force_2b<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>( 
-    vflag_either,
-    cvflag_atom,
-    vatom_num,
-    paramb,
-    annmb,
-    nall,
-    inum,
-    nlocal,
-    max_I_neigh,
-    numneigh,
-    firstneigh,
-    ilist,
-    lmp_data.type.data(),
-    lmp_data.position.data(),
-    nep_data.Fp.data(),
-    force_per_atom,
-    cv_per_atom
     );
+  } else {
+    backward_force_2b<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>(
+      vflag_either,
+      cvflag_atom,
+      vatom_num,
+      paramb,
+      annmb,
+      nall,
+      inum,
+      nlocal,
+      max_I_neigh,
+      numneigh,
+      firstneigh,
+      ilist,
+      lmp_data.type.data(),
+      lmp_data.position.data(),
+      nep_data.Fp.data(),
+      nep_data.charge_derivative.data(),
+      nep_data.D_real.data(),
+      force_per_atom,
+      cv_per_atom
+      );
   }
   int shm_float_count = 3 + paramb.dim_angular + paramb.n_max_angular_plus1 * NUM_OF_ABC;
-  shm_float_count += BLOCK_SIZE32 * MAX_NUM_N * 2;// 168个寄存器使用, block 64 会导致共享内存翻倍，驻留block减少
+  shm_float_count += BLOCK_SIZE32 * MAX_NUM_N * 2;
   size_t shared_bytes = shm_float_count * sizeof(NEP_FLOAT);
-  if (shared_bytes < SHAREMEM_32) {
-    dim3 grid(inum); // 中心原子数
+  if (paramb.charge_mode != 2 && shared_bytes < SHAREMEM_32) {
+    dim3 grid(inum);
     dim3 block(BLOCK_SIZE32);
     backward_force_3b_per_atom_sharemem<<<grid, block, shared_bytes>>>(
         paramb,
@@ -888,6 +990,8 @@ void NEPKK::compute(
       lmp_data.type.data(),
       lmp_data.position.data(),
       nep_data.Fp.data(),
+      nep_data.charge_derivative.data(),
+      nep_data.D_real.data(),
       nep_data.sum_fxyz.data(),
       nep_data.f12x.data(),
       nep_data.f12y.data(),
@@ -998,7 +1102,7 @@ void NEPKK::compute(
     CUDA_CHECK_KERNEL
     cudaDeviceSynchronize();
     nep_data.total_virial.copy_to_host(h_etot_virial_global+1, 6);
-    // printf("Virialtotal = %f %f %f %f %f %f\n", h_etot_virial_global[1], h_etot_virial_global[2], h_etot_virial_global[3], h_etot_virial_global[4], h_etot_virial_global[5], h_etot_virial_global[6]);
+    printf("Virialtotal = %f %f %f %f %f %f\n", h_etot_virial_global[1], h_etot_virial_global[2], h_etot_virial_global[3], h_etot_virial_global[4], h_etot_virial_global[5], h_etot_virial_global[6]);
   }
 
   if (eflag_global && ff_index == 0) { // 根据需要计算总能，potential_per_atom是每个原子的能量，需要求和, 算偏差不需要总能

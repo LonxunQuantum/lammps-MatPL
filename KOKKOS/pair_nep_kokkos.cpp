@@ -16,6 +16,7 @@
 #include "atom_kokkos.h"
 #include "atom_masks.h"
 #include "comm.h"
+#include "domain.h"
 #include "error.h"
 #include "force.h"
 #include "kokkos.h"
@@ -177,6 +178,13 @@ void PairNEPKokkos<DeviceType>::settings(int narg, char **arg)
       utils::logmesg(lmp, "NEP Kokkos potential " + model_file + " loaded successfully\n");
     }
   }
+  // if (comm->nprocs > 1) {
+  //   for (int i = 0; i < num_ff; ++i) {
+  //     if (nep_gpu_models[i].paramb.charge_mode == 2) {
+  //       error->all(FLERR, "Pair style matpl/nep/kk qNEP charge_mode=2 currently requires a single MPI rank");
+  //     }
+  //   }
+  // }
 }
 
 /* ----------------------------------------------------------------------
@@ -433,6 +441,11 @@ void PairNEPKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
 
   // Invoke NEP computation
   // printf("=========nep start compute force ==========\n");
+  double box_h[9] = {
+    domain->xprd, domain->xy,   domain->xz,
+    0.0,          domain->yprd, domain->yz,
+    0.0,          0.0,          domain->zprd
+  };
   if (!is_devi_step) {//增加了多模型偏差值计算，不涉及多模型则nep_gpu_models数组只有1个模型
     nep_gpu_models[0].compute(
       eflag_global,
@@ -460,6 +473,8 @@ void PairNEPKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
       nullptr,                                        // 如果 num_ff 大于0，输出到f 和 full_f
       virial_per_atom_ptr,                           // 6-component per-atom virial or internal work buffer
       cvirial_per_atom_ptr,                          // 9-component centroid virial
+      box_h,
+      kspace_method.c_str(),
       h_etot_virial_global.data()
     );
     // printf("=========end start compute force  etot %f ==========\n", h_etot_virial_global[0]);
@@ -498,6 +513,8 @@ void PairNEPKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
         full_f_ptr,                                  // 如果 num_ff 大于0，输出到f 和 full_f
         virial_per_atom_ptr,                           // 6-component per-atom virial or internal work buffer
         cvirial_per_atom_ptr,                          // 9-component centroid virial
+        box_h,
+        kspace_method.c_str(),
         h_etot_virial_global.data()
         // neighbor_rebuilt
       );

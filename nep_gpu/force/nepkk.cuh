@@ -43,6 +43,10 @@ struct LMP_Data  {
   GPU_Vector<NEP_FLOAT> position; // 将double坐标转换为float，读取会更快
 };
 
+struct NEPKK_Box {
+  double h[9];
+};
+
 struct NEPKK_Data {
   GPU_Vector<NEP_FLOAT> f12x; // 3-body or manybody partial forces
   GPU_Vector<NEP_FLOAT> f12y; // 3-body or manybody partial forces
@@ -62,6 +66,17 @@ struct NEPKK_Data {
   GPU_Vector<double> virial_per_atom;
   GPU_Vector<double> total_virial;
   GPU_Vector<double> partial_virial;
+  GPU_Vector<NEP_FLOAT> charge;
+  GPU_Vector<NEP_FLOAT> charge_derivative;
+  GPU_Vector<NEP_FLOAT> D_real;
+  GPU_Vector<NEP_FLOAT> bec;
+  GPU_Vector<int> num_kpoints;
+  GPU_Vector<NEP_FLOAT> kx;
+  GPU_Vector<NEP_FLOAT> ky;
+  GPU_Vector<NEP_FLOAT> kz;
+  GPU_Vector<NEP_FLOAT> G;
+  GPU_Vector<NEP_FLOAT> S_real;
+  GPU_Vector<NEP_FLOAT> S_imag;
 };
 
 class NEPKK
@@ -70,6 +85,7 @@ public:
   struct ParaMB {
     bool use_typewise_cutoff_zbl = false;
     NEP_FLOAT typewise_cutoff_zbl_factor = FLOAT_LIT(0.0);
+    int charge_mode = 0;
     int version = 4; // NEP version
     int model_type = 0; // 0=potential, 1=dipole, 2=polarizability, 3=temperature-dependent free energy
     NEP_FLOAT rc_radial = FLOAT_LIT(0.0);     // radial cutoff
@@ -94,6 +110,9 @@ public:
     int num_types_sq = 0;       // for nep3
     int num_c_radial = 0;       // for nep3
     int num_types = 0;
+    int num_kpoints_max = 50000;
+    NEP_FLOAT charge_alpha = FLOAT_LIT(0.0);
+    NEP_FLOAT charge_alpha_factor = FLOAT_LIT(0.0);
     NEP_FLOAT q_scaler[140];
   };
 
@@ -107,6 +126,7 @@ public:
     const NEP_FLOAT* w0[NUM_ELEMENTS]; // weight from the input layer to the hidden layer
     const NEP_FLOAT* b0[NUM_ELEMENTS]; // bias for the hidden layer
     const NEP_FLOAT* w1[NUM_ELEMENTS]; // weight from the hidden layer to the output layer
+    const NEP_FLOAT* sqrt_epsilon_inf;
     const NEP_FLOAT* b1;             // bias for the output layer
     NEP_FLOAT* c;
   };
@@ -174,6 +194,8 @@ public:
     double* force_per_atom_copy,
     double* virial_per_atom,
     double* cvirial_per_atom,
+    const double* box_h,
+    const char* kspace_method,
     double* h_etot_virial_global // len=7: etot + 6 virials
     );
 
