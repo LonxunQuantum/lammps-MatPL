@@ -53,6 +53,7 @@ namespace LAMMPS_NS {
             std::string explrError_fname = "explr.error";
             std::FILE *explrError_fp = nullptr;
             int out_freq = 1;
+            std::string kspace_method = "ewald";
 
             std::vector<int> atom_types;           // use for jit models
             std::vector<int> model_atom_type_idx;  // use for jit models 
