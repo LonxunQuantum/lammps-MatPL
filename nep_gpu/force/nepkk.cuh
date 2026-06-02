@@ -32,6 +32,7 @@ In the read_neptxt function for parsing NEP.txt is adapted from the GPUMD source
 #pragma once
 #include "../utilities/common.cuh"
 #include "../utilities/gpu_vector.cuh"
+#include <cufft.h>
 #include <tuple>
 #include <utility> // for std::move
 // #include <Kokkos_Core.hpp>
@@ -47,6 +48,37 @@ struct LMP_Data  {
 
 struct NEPKK_Box {
   double h[9];
+  double hi[9];
+};
+
+struct NEPKK_PPPM_Para {
+  int K0K1K2 = 0;
+  int K0K1 = 0;
+  int K[3] = {0, 0, 0};
+  int K_half[3] = {0, 0, 0};
+  NEP_FLOAT alpha = FLOAT_LIT(0.0);
+  NEP_FLOAT alpha_factor = FLOAT_LIT(0.0);
+  NEP_FLOAT two_pi_over_V = FLOAT_LIT(0.0);
+  NEP_FLOAT b[3][3];
+  NEP_FLOAT two_pi_over_K[3];
+};
+
+struct NEPKK_PPPM_Data {
+  NEPKK_PPPM_Para para;
+  GPU_Vector<NEP_FLOAT> kx;
+  GPU_Vector<NEP_FLOAT> ky;
+  GPU_Vector<NEP_FLOAT> kz;
+  GPU_Vector<NEP_FLOAT> G;
+  GPU_Vector<cufftComplex> mesh;
+  GPU_Vector<cufftComplex> mesh_G;
+  GPU_Vector<cufftComplex> mesh_x;
+  GPU_Vector<cufftComplex> mesh_y;
+  GPU_Vector<cufftComplex> mesh_z;
+  GPU_Vector<cufftComplex> mesh_virial;
+  cufftHandle plan = 0;
+  cufftHandle plan_virial = 0;
+  bool plan_initialized = false;
+  bool plan_virial_initialized = false;
 };
 
 struct NEPKK_Data {
@@ -158,6 +190,7 @@ public:
   ANN annmb;
   ZBL zbl;
   NEPKK_Data nep_data;
+  NEPKK_PPPM_Data pppm_data;
   LMP_Data lmp_data;
   std::vector<int> cpu_element_atomic_number_list;
   GPU_Vector<int> atom_type_map; // 用于结构和力场中的元素顺序不一致时做映射

@@ -97,6 +97,8 @@ if(PKG_NEP_KK)
   if(NOT Kokkos_ENABLE_CUDA)
     message(FATAL_ERROR "NEP_KK requires CUDA support. Enable with -DKokkos_ENABLE_CUDA=yes")
   endif()
+
+  find_package(CUDAToolkit REQUIRED)
   
   message(STATUS "NEP_KK: Building with mandatory KOKKOS and CUDA")
   
@@ -111,6 +113,7 @@ if(PKG_NEP_KK)
   )
   # Simply add to compilation - let Kokkos configuration handle these files
   target_sources(lammps PRIVATE ${NEP_KOKKOS_SOURCES} ${NEP_KK_SOURCES})
+  target_link_libraries(lammps PUBLIC CUDA::cufft)
   # Only set include directories
   target_include_directories(lammps PRIVATE 
     ${LAMMPS_SOURCE_DIR}/KOKKOS

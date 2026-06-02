@@ -79,6 +79,7 @@ class PairNEPKokkos : public PairNEP {
   bool reverse_force = false;
   std::vector<NEPKK> nep_gpu_models;  // NEP model instance
   std::vector<std::string> potential_files;
+  std::string kspace_method = "ewald";
 
   std::string explrError_fname = "explr.error";
   std::FILE *explrError_fp = nullptr;

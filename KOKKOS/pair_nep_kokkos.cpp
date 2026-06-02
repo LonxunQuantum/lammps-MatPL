@@ -146,6 +146,13 @@ void PairNEPKokkos<DeviceType>::settings(int narg, char **arg)
         out_freq = utils::inumeric(FLERR, arg[++iarg], false, lmp);
     } else if (strcmp(arg[iarg], "out_file") == 0) {
         explrError_fname = arg[++iarg];
+    } else if (strcmp(arg[iarg], "kspace") == 0 || strcmp(arg[iarg], "kspace_method") == 0) {
+        kspace_method = arg[++iarg];
+        if (kspace_method != "ewald" && kspace_method != "pppm") {
+          error->all(FLERR, "pair_style matpl/nep/kk kspace must be ewald or pppm");
+        }
+        if(is_rank_0) utils::logmesg(lmp, "NEP Kokkos kspace: " + kspace_method + "\n");
+
     } 
     iarg++;    
   }

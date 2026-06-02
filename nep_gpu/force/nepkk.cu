@@ -34,6 +34,7 @@ wuxingxing@pwmat.com and MatPL development team. 2026. Beijing Lonxun Quantum Co
 
 #include "nepkk.cuh"
 #include "ewald_nepkk.cuh"
+#include "pppm_nepkk.cuh"
 #include "nep_kernal_function.cuh"
 #include "../utilities/common.cuh"
 #include "../utilities/error.cuh"
@@ -431,7 +432,7 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
 
 NEPKK::~NEPKK(void)
 {
-  // nothing
+  nepkk_pppm_destroy(pppm_data);
 }
 
 void NEPKK::checkMemoryUsage(int sgin) {
@@ -762,6 +763,18 @@ void NEPKK::compute(
   for (int d = 0; d < 9; ++d) {
     box.h[d] = box_h[d];
   }
+  const double det = box.h[0] * (box.h[4] * box.h[8] - box.h[5] * box.h[7]) -
+                     box.h[1] * (box.h[3] * box.h[8] - box.h[5] * box.h[6]) +
+                     box.h[2] * (box.h[3] * box.h[7] - box.h[4] * box.h[6]);
+  box.hi[0] = (box.h[4] * box.h[8] - box.h[5] * box.h[7]) / det;
+  box.hi[1] = (box.h[2] * box.h[7] - box.h[1] * box.h[8]) / det;
+  box.hi[2] = (box.h[1] * box.h[5] - box.h[2] * box.h[4]) / det;
+  box.hi[3] = (box.h[5] * box.h[6] - box.h[3] * box.h[8]) / det;
+  box.hi[4] = (box.h[0] * box.h[8] - box.h[2] * box.h[6]) / det;
+  box.hi[5] = (box.h[2] * box.h[3] - box.h[0] * box.h[5]) / det;
+  box.hi[6] = (box.h[3] * box.h[7] - box.h[4] * box.h[6]) / det;
+  box.hi[7] = (box.h[1] * box.h[6] - box.h[0] * box.h[7]) / det;
+  box.hi[8] = (box.h[0] * box.h[4] - box.h[1] * box.h[3]) / det;
 
   // 将double的原子坐标转换为float32 or 64
   doubleTofloat<<<(nall*3 + BLOCK_SIZE256 - 1) / BLOCK_SIZE256, BLOCK_SIZE256>>>(
@@ -886,36 +899,55 @@ void NEPKK::compute(
     nepkk_zero_global_mean_charge2(nlocal, natoms_global, allreduce_double, allreduce_context, nep_data.charge);
     CUDA_CHECK_KERNEL
     const std::string kspace = (kspace_method == nullptr) ? "ewald" : std::string(kspace_method);
-    if (kspace != "ewald") {
-      std::cout << "NEPKK charge_mode=2 currently supports kspace_method=ewald, got " << kspace << std::endl;
+    if (kspace == "pppm") {
+      nepkk_pppm_find_force_charge2(
+        pppm_data,
+        nlocal,
+        paramb.charge_alpha,
+        paramb.charge_alpha_factor,
+        box,
+        nep_data.charge,
+        lmp_data.position,
+        nep_data.D_real,
+        force_per_atom,
+        cv_per_atom,
+        vflag_either,
+        cvflag_atom,
+        vatom_num,
+        mpi_size,
+        allreduce_double,
+        allreduce_context);
+    } else if (kspace == "ewald") {
+      nepkk_ewald_find_force_charge2(
+        nlocal,
+        BLOCK_SIZE64,
+        (nlocal - 1) / BLOCK_SIZE64 + 1,
+        paramb.num_kpoints_max,
+        paramb.charge_alpha,
+        paramb.charge_alpha_factor,
+        box,
+        nep_data.charge,
+        lmp_data.position,
+        nep_data.num_kpoints,
+        nep_data.kx,
+        nep_data.ky,
+        nep_data.kz,
+        nep_data.G,
+        nep_data.S_real,
+        nep_data.S_imag,
+        nep_data.D_real,
+        force_per_atom,
+        cv_per_atom,
+        vflag_either,
+        cvflag_atom,
+        vatom_num,
+        mpi_size,
+        allreduce_double,
+        allreduce_context);
+    } else {
+      std::cout << "NEPKK charge_mode=2 kspace_method must be ewald or pppm, got " << kspace << std::endl;
       exit(1);
     }
-    nepkk_ewald_find_force_charge2(
-      nlocal,
-      BLOCK_SIZE64,
-      (nlocal - 1) / BLOCK_SIZE64 + 1,
-      paramb.num_kpoints_max,
-      paramb.charge_alpha,
-      paramb.charge_alpha_factor,
-      box,
-      nep_data.charge,
-      lmp_data.position,
-      nep_data.num_kpoints,
-      nep_data.kx,
-      nep_data.ky,
-      nep_data.kz,
-      nep_data.G,
-      nep_data.S_real,
-      nep_data.S_imag,
-      nep_data.D_real,
-      force_per_atom,
-      cv_per_atom,
-      vflag_either,
-      cvflag_atom,
-      vatom_num,
-      mpi_size,
-      allreduce_double,
-      allreduce_context);
     nepkk_zero_global_mean_charge2(nlocal, natoms_global, allreduce_double, allreduce_context, nep_data.D_real);
     CUDA_CHECK_KERNEL
   }
