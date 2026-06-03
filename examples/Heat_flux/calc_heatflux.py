@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
 
 size = 20
 def lammps_heatflux(path):
@@ -20,7 +21,8 @@ def lammps_heatflux(path):
     accum_jpy = np.cumsum(jpy) * 0.001 / 1000 #in units of KeV
     return t, accum_jpy, Etol
 
-t_nep, jp_nep, etol_nep = lammps_heatflux(".")
+path = sys.argv[1] if len(sys.argv) > 1 else "."
+t_nep, jp_nep, etol_nep = lammps_heatflux(path)
 
 plt.figure(figsize=(10,6))
 plt.plot(t_nep, -1 * jp_nep, lw = 3, ls = "-", label = "NEP, from atoms")
