@@ -1,6 +1,6 @@
+# -*- coding: utf-8 -*-
 import numpy as np
 import matplotlib.pyplot as plt
-import sys
 
 size = 20
 def lammps_heatflux(path):
@@ -20,14 +20,15 @@ def lammps_heatflux(path):
     accum_jpy = np.cumsum(jpy) * 0.001 / 1000 #in units of KeV
     return t, accum_jpy, Etol
 
-t_nep, jp_nep, etol_nep = lammps_heatflux(sys.argv[1])
+t_nep, jp_nep, etol_nep = lammps_heatflux(".")
 
+plt.figure(figsize=(10,6))
 plt.plot(t_nep, -1 * jp_nep, lw = 3, ls = "-", label = "NEP, from atoms")
 plt.plot(t_nep, etol_nep, lw = 3, ls = "--", label = "NEP, from thermostats")
-plt.xlim([0, 3.])
-plt.xticks(np.linspace(0, 3., 4),size=size-4,fontweight='bold')
-plt.ylim([0, 4])
-plt.yticks(np.linspace(0, 4, 5),fontsize=size-4,fontweight='bold')
+plt.xlim([0, 1.5])
+plt.xticks(np.linspace(0, 1.5, 4),size=size-4,fontweight='bold')
+plt.ylim([0, 2])
+plt.yticks(np.linspace(0, 2, 5),fontsize=size-4,fontweight='bold')
 plt.xlabel('Time (ns)',size=size,fontweight='bold')
 plt.ylabel('Accumulated heat (keV)',size=size,fontweight='bold')
 plt.title("MatPL-NEP",size=size+4,fontweight='bold')
