@@ -21,7 +21,7 @@ def load_heatflux(path):
     jp = jp[start:]
     t = dt * np.arange(1, len(jp) + 1) * Ns / 1000  # ns
 
-    jpy = jp[:, 1] - jp[:, 4]
+    jpy = jp[:, 2] - jp[:, 5]
     jpy = jpy / BLOCK_LENGTH / 10 * 1000  # eV/ns
     accum_jpy = np.cumsum(jpy) * 0.001 / 1000  # keV
     return t, -accum_jpy
