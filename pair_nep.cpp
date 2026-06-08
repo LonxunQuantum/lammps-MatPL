@@ -107,6 +107,7 @@ void PairNEP::settings(int narg, char** arg)
             if (kspace_method != "ewald" && kspace_method != "pppm") {
                 error->all(FLERR, "pair_style matpl/nep kspace must be ewald or pppm");
             }
+            if (me == 0) utils::logmesg(lmp, "NEP-CPU kspace: " + kspace_method + "\n");
         }
         iarg++;
     }
