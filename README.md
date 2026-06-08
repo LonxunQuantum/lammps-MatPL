@@ -76,6 +76,29 @@ pair_coeff       * * Hf O
 
 ```
 
+## NEP-charge / qNEP
+
+For `nep4_charge2` QNEP potentials, specify the reciprocal-space charge solver in the `pair_style` command with `kspace ewald` or `kspace pppm`:
+
+```txt
+# Ewald reciprocal-space solver
+pair_style   matpl/nep/kk  nep.txt kspace ewald
+pair_coeff   * * Hf O
+```
+
+```txt
+# PPPM reciprocal-space solver
+pair_style   matpl/nep/kk  nep.txt kspace pppm
+pair_coeff   * * Hf O
+```
+
+The same option can also be written as `kspace_method ewald` or `kspace_method pppm`. Example LAMMPS inputs are provided in:
+
+```txt
+examples/nep-charge/lmps-ewald
+examples/nep-charge/lmps-pppm
+```
+
 # Citation
 * If you use the LAMMPS interface of this nep-kokkos here, you are suggested to cite the following (`The article will be released soon`):
 
@@ -84,5 +107,9 @@ pair_coeff       * * Hf O
 * If you directly or indirectly use the `NEP` class here, you are suggested to cite the following paper:
 
   * Ke Xu, Hekai Bu, Shuning Pan, Eric Lindgren, Yongchao Wu, Yong Wang, Jiahui Liu, Keke Song, Bin Xu, Yifan Li, Tobias Hainer, Lucas Svensson, Julia Wiktor, Rui Zhao, Hongfu Huang, Cheng Qian, Shuo Zhang, Zezhu Zeng, Bohan Zhang, Benrui Tang, Yang Xiao, Zihan Yan, Jiuyang Shi, Zhixin Liang, Junjie Wang, Ting Liang, Shuo Cao, Yanzhou Wang, Penghua Ying, Nan Xu, Chengbing Chen, Yuwen Zhang, Zherui Chen, Xin Wu, Wenwu Jiang, Esme Berger, Yanlong Li, Shunda Chen, Alexander J. Gabourie, Haikuan Dong, Shiyun Xiong, Ning Wei, Yue Chen, Jianbin Xu, Feng Ding, Zhimei Sun, Tapio Ala-Nissila, Ari Harju, Jincheng Zheng, Pengfei Guan, Paul Erhart, Jian Sun, Wengen Ouyang, Yanjing Su, Zheyong Fan, [GPUMD 4.0: A high-performance molecular dynamics package for versatile materials simulations with machine-learned potentials]( https://doi.org/10.1002/mgea.70028), MGE Advances **3**, e70028 (2025).
+
+* If you use QNEP/NEP-charge potentials with dynamic charges, you are suggested to cite the following paper:
+
+  * Zheyong Fan*, Benrui Tang, Esmée Berger, Ethan Berger, Erik Fransson, Ke Xu, Zihan Yan, Zhoulin Liu, Zichen Song, Haikuan Dong, Shunda Chen, Lei Li, Ziliang Wang, Yizhou Zhu, Julia Wiktor, Paul Erhart*, [qNEP: A Highly Efficient Neuroevolution Potential with Dynamic Charges for Large-Scale Atomistic Simulations](https://doi.org/10.1021/acs.jctc.6c00146), J. Chem. Theory Comput. 2026.
 
 * If you use the LAMMPS interface of the `NEP` class, a proper citation for LAMMPS is also suggested. 
