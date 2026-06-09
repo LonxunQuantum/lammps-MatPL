@@ -160,17 +160,42 @@ void PairNEPKokkos<DeviceType>::settings(int narg, char **arg)
           error->all(FLERR, "pair_style matpl/nep/kk pppm_spacing must be positive");
         }
     } else if (strcmp(arg[iarg], "pppm_mesh") == 0) {
-        if (iarg + 3 >= narg) {
-          error->all(FLERR, "pair_style matpl/nep/kk pppm_mesh requires 3 integer values");
+        if (iarg + 1 >= narg) {
+          error->all(FLERR, "pair_style matpl/nep/kk pppm_mesh requires friendly, power2, or 3 integer values");
         }
-        for (int d = 0; d < 3; ++d) {
-          pppm_mesh[d] = utils::inumeric(FLERR, arg[++iarg], false, lmp);
-          if (pppm_mesh[d] <= 0) {
-            error->all(FLERR, "pair_style matpl/nep/kk pppm_mesh values must be positive");
+        std::string mesh_arg(arg[iarg + 1]);
+        if (mesh_arg == "friendly") {
+          pppm_mesh_mode = 1;
+          for (int d = 0; d < 3; ++d) pppm_mesh[d] = 0;
+          ++iarg;
+        } else if (mesh_arg == "power2") {
+          pppm_mesh_mode = 0;
+          for (int d = 0; d < 3; ++d) pppm_mesh[d] = 0;
+          ++iarg;
+        } else {
+          if (iarg + 3 >= narg) {
+            error->all(FLERR, "pair_style matpl/nep/kk pppm_mesh requires friendly, power2, or 3 integer values");
+          }
+          pppm_mesh_mode = 2;
+          for (int d = 0; d < 3; ++d) {
+            pppm_mesh[d] = utils::inumeric(FLERR, arg[++iarg], false, lmp);
+            if (pppm_mesh[d] <= 0) {
+              error->all(FLERR, "pair_style matpl/nep/kk pppm_mesh values must be positive");
+            }
           }
         }
     } 
     iarg++;    
+  }
+
+  if (is_rank_0 && kspace_method == "pppm") {
+    if (pppm_mesh_mode == 1) {
+      utils::logmesg(lmp, "NEP Kokkos PPPM mesh mode: friendly (2/3/5/7 FFT-friendly mesh)\n");
+    } else if (pppm_mesh_mode == 2) {
+      utils::logmesg(lmp, "NEP Kokkos PPPM mesh mode: explicit user mesh\n");
+    } else {
+      utils::logmesg(lmp, "NEP Kokkos PPPM mesh mode: power2 (default, GPUMD-compatible). For large systems, use pppm_mesh friendly or explicit pppm_mesh Nx Ny Nz to reduce GPU memory.\n");
+    }
   }
 
   if (is_rank_0 and num_ff > 1) {
@@ -202,6 +227,7 @@ void PairNEPKokkos<DeviceType>::settings(int narg, char **arg)
     std::string model_file = potential_files[i];
     nep_gpu_models[i].read_neptxt(model_file.c_str(), is_rank_0, comm->me, device_id, i);
     nep_gpu_models[i].paramb.pppm_mesh_spacing = static_cast<NEP_FLOAT>(pppm_mesh_spacing);
+    nep_gpu_models[i].paramb.pppm_mesh_mode = pppm_mesh_mode;
     for (int d = 0; d < 3; ++d) nep_gpu_models[i].paramb.pppm_mesh[d] = pppm_mesh[d];
     if (i == 0) {
       cutoff = nep_gpu_models[i].paramb.rc_radial;

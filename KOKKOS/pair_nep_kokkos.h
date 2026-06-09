@@ -81,6 +81,7 @@ class PairNEPKokkos : public PairNEP {
   std::vector<std::string> potential_files;
   std::string kspace_method = "ewald";
   double pppm_mesh_spacing = 1.0;
+  int pppm_mesh_mode = 0;
   int pppm_mesh[3] = {0, 0, 0};
 
   std::string explrError_fname = "explr.error";

@@ -11,6 +11,15 @@
 
 namespace {
 
+int nepkk_get_power2_pppm_K(const int m)
+{
+  int n = 16;
+  while (n < m) {
+    n *= 2;
+  }
+  return n;
+}
+
 bool nepkk_is_pppm_fft_friendly(int n)
 {
   if (n < 1) return false;
@@ -21,7 +30,7 @@ bool nepkk_is_pppm_fft_friendly(int n)
   return n == 1;
 }
 
-int nepkk_get_best_pppm_K(const int m)
+int nepkk_get_friendly_pppm_K(const int m)
 {
   int n = m < 16 ? 16 : m;
   while (!nepkk_is_pppm_fft_friendly(n)) {
@@ -443,6 +452,7 @@ inline void nepkk_pppm_find_para(
   const NEP_FLOAT alpha_factor,
   const NEPKK_Box& box,
   const NEP_FLOAT mesh_spacing,
+  const int mesh_mode,
   const int user_mesh[3])
 {
   NEPKK_PPPM_Para& para = pppm.para;
@@ -459,7 +469,12 @@ inline void nepkk_pppm_find_para(
       K[d] = user_mesh[d];
     } else {
       const double box_thickness = volume / nepkk_box_area(box, d);
-      K[d] = nepkk_get_best_pppm_K(int(ceil(box_thickness / spacing)));
+      const double mesh_estimate = box_thickness / spacing;
+      if (mesh_mode == 1) {
+        K[d] = nepkk_get_friendly_pppm_K(int(ceil(mesh_estimate)));
+      } else {
+        K[d] = nepkk_get_power2_pppm_K(int(mesh_estimate));
+      }
     }
     para.K_half[d] = K[d] / 2;
     para.two_pi_over_K[d] = two_pi / K[d];
@@ -488,6 +503,7 @@ inline void nepkk_pppm_find_force_charge2(
   const NEP_FLOAT alpha_factor,
   const NEPKK_Box& box,
   const NEP_FLOAT mesh_spacing,
+  const int mesh_mode,
   const int user_mesh[3],
   const GPU_Vector<NEP_FLOAT>& charge,
   const GPU_Vector<NEP_FLOAT>& position,
@@ -501,7 +517,7 @@ inline void nepkk_pppm_find_force_charge2(
   NEPKKAllreduceDouble allreduce_double,
   void* allreduce_context)
 {
-  nepkk_pppm_find_para(pppm, N, alpha, alpha_factor, box, mesh_spacing, user_mesh);
+  nepkk_pppm_find_para(pppm, N, alpha, alpha_factor, box, mesh_spacing, mesh_mode, user_mesh);
   const NEPKK_PPPM_Para para = pppm.para;
   const int mesh_grid_size = (para.K0K1K2 - 1) / 64 + 1;
   const int atom_grid_size = (N - 1) / 64 + 1;

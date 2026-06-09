@@ -907,6 +907,7 @@ void NEPKK::compute(
         paramb.charge_alpha_factor,
         box,
         paramb.pppm_mesh_spacing,
+        paramb.pppm_mesh_mode,
         paramb.pppm_mesh,
         nep_data.charge,
         lmp_data.position,

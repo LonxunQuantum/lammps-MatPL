@@ -92,25 +92,35 @@ pair_style   matpl/nep/kk  nep.txt kspace pppm
 pair_coeff   * * Hf O
 ```
 
-The PPPM mesh is selected automatically from the simulation box size. By default,
-the target grid spacing is `1.0`, and each mesh dimension is rounded up to an
-FFT-friendly size whose prime factors are limited to `2`, `3`, `5`, and `7`.
-You can change the target spacing:
+By default, PPPM uses a power-of-two mesh selected from the simulation box size. For large systems, the
+power-of-two mesh can consume substantial GPU memory; in that case, explicitly
+request an FFT-friendly mesh whose prime factors are limited to `2`, `3`, `5`, and `7`.
 
 ```txt
-# PPPM with automatic FFT-friendly mesh from a target grid spacing
-pair_style   matpl/nep/kk  nep.txt kspace pppm pppm_spacing 2.0
+# PPPM with memory-friendly FFT mesh
+pair_style   matpl/nep/kk  nep.txt kspace pppm pppm_mesh friendly
 pair_coeff   * * Hf O
 ```
 
-For large systems, you can also set the mesh explicitly. When `pppm_mesh` is
-given, it overrides `pppm_spacing`:
+The mesh size is calculated as follows:
+
+$$
+K=min\left \{ n \ge m | n = 2^a * 3^b * 5^c * 7 ^d \right \} 
+$$
+
+
+For example, with a 70-cell width of HfO2, the cell length is approximately 371.4 Å. Using a power of 2, the mesh size is 512 > 371.4Å. The entire mesh size is 512 * 512 * 512, which will consume a large amount of GPU memory. In this case, using the frinedly method, the mesh size is 375.
+
+You can also set the mesh explicitly. This has the highest priority:
 
 ```txt
 # PPPM with explicit mesh dimensions
 pair_style   matpl/nep/kk  nep.txt kspace pppm pppm_mesh 384 384 384
 pair_coeff   * * Hf O
 ```
+
+The optional `pppm_spacing` keyword changes the target grid spacing used by
+the automatic `power2` and `friendly` modes. Its default value is `1.0`.
 
 The same option can also be written as `kspace_method ewald` or `kspace_method pppm`. Example LAMMPS inputs are provided in:
 
