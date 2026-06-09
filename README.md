@@ -92,6 +92,26 @@ pair_style   matpl/nep/kk  nep.txt kspace pppm
 pair_coeff   * * Hf O
 ```
 
+The PPPM mesh is selected automatically from the simulation box size. By default,
+the target grid spacing is `1.0`, and each mesh dimension is rounded up to an
+FFT-friendly size whose prime factors are limited to `2`, `3`, `5`, and `7`.
+You can change the target spacing:
+
+```txt
+# PPPM with automatic FFT-friendly mesh from a target grid spacing
+pair_style   matpl/nep/kk  nep.txt kspace pppm pppm_spacing 2.0
+pair_coeff   * * Hf O
+```
+
+For large systems, you can also set the mesh explicitly. When `pppm_mesh` is
+given, it overrides `pppm_spacing`:
+
+```txt
+# PPPM with explicit mesh dimensions
+pair_style   matpl/nep/kk  nep.txt kspace pppm pppm_mesh 384 384 384
+pair_coeff   * * Hf O
+```
+
 The same option can also be written as `kspace_method ewald` or `kspace_method pppm`. Example LAMMPS inputs are provided in:
 
 ```txt

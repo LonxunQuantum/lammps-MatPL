@@ -906,6 +906,8 @@ void NEPKK::compute(
         paramb.charge_alpha,
         paramb.charge_alpha_factor,
         box,
+        paramb.pppm_mesh_spacing,
+        paramb.pppm_mesh,
         nep_data.charge,
         lmp_data.position,
         nep_data.D_real,
@@ -1141,7 +1143,7 @@ void NEPKK::compute(
     CUDA_CHECK_KERNEL
     cudaDeviceSynchronize();
     nep_data.total_virial.copy_to_host(h_etot_virial_global+1, 6);
-    printf("Virialtotal = %f %f %f %f %f %f\n", h_etot_virial_global[1], h_etot_virial_global[2], h_etot_virial_global[3], h_etot_virial_global[4], h_etot_virial_global[5], h_etot_virial_global[6]);
+    //printf("Virialtotal = %f %f %f %f %f %f\n", h_etot_virial_global[1], h_etot_virial_global[2], h_etot_virial_global[3], h_etot_virial_global[4], h_etot_virial_global[5], h_etot_virial_global[6]);
   }
 
   if (eflag_global && ff_index == 0) { // 根据需要计算总能，potential_per_atom是每个原子的能量，需要求和, 算偏差不需要总能

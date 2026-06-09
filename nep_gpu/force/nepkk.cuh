@@ -147,6 +147,8 @@ public:
     int num_kpoints_max = 50000;
     NEP_FLOAT charge_alpha = FLOAT_LIT(0.0);
     NEP_FLOAT charge_alpha_factor = FLOAT_LIT(0.0);
+    NEP_FLOAT pppm_mesh_spacing = FLOAT_LIT(1.0);
+    int pppm_mesh[3] = {0, 0, 0};
     NEP_FLOAT q_scaler[140];
   };
 

@@ -151,8 +151,24 @@ void PairNEPKokkos<DeviceType>::settings(int narg, char **arg)
         if (kspace_method != "ewald" && kspace_method != "pppm") {
           error->all(FLERR, "pair_style matpl/nep/kk kspace must be ewald or pppm");
         }
-        if(is_rank_0) utils::logmesg(lmp, "NEP Kokkos kspace: " + kspace_method + "\n");
-
+    } else if (strcmp(arg[iarg], "pppm_spacing") == 0) {
+        if (iarg + 1 >= narg) {
+          error->all(FLERR, "pair_style matpl/nep/kk pppm_spacing requires one value");
+        }
+        pppm_mesh_spacing = utils::numeric(FLERR, arg[++iarg], false, lmp);
+        if (pppm_mesh_spacing <= 0.0) {
+          error->all(FLERR, "pair_style matpl/nep/kk pppm_spacing must be positive");
+        }
+    } else if (strcmp(arg[iarg], "pppm_mesh") == 0) {
+        if (iarg + 3 >= narg) {
+          error->all(FLERR, "pair_style matpl/nep/kk pppm_mesh requires 3 integer values");
+        }
+        for (int d = 0; d < 3; ++d) {
+          pppm_mesh[d] = utils::inumeric(FLERR, arg[++iarg], false, lmp);
+          if (pppm_mesh[d] <= 0) {
+            error->all(FLERR, "pair_style matpl/nep/kk pppm_mesh values must be positive");
+          }
+        }
     } 
     iarg++;    
   }
@@ -185,6 +201,8 @@ void PairNEPKokkos<DeviceType>::settings(int narg, char **arg)
   for (int i=0; i < num_ff; i++) {
     std::string model_file = potential_files[i];
     nep_gpu_models[i].read_neptxt(model_file.c_str(), is_rank_0, comm->me, device_id, i);
+    nep_gpu_models[i].paramb.pppm_mesh_spacing = static_cast<NEP_FLOAT>(pppm_mesh_spacing);
+    for (int d = 0; d < 3; ++d) nep_gpu_models[i].paramb.pppm_mesh[d] = pppm_mesh[d];
     if (i == 0) {
       cutoff = nep_gpu_models[i].paramb.rc_radial;
       cutoffsq = cutoff * cutoff;
