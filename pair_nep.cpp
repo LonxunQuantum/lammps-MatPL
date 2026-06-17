@@ -56,6 +56,11 @@ PairNEP::~PairNEP()
 
 }
 
+void PairNEP::qnep_bec_atom(double ** /*array*/, int /*nmax*/)
+{
+    error->all(FLERR, "compute qnep/bec/atom requires pair_style matpl/nep/kk with a NEP-charge potential");
+}
+
 /* ----------------------------------------------------------------------
    allocate all arrays
 ------------------------------------------------------------------------- */
@@ -95,8 +100,9 @@ void PairNEP::settings(int narg, char** arg)
             iarg++;
         } else {
             break;
-        }
     }
+}
+
     while (iarg < narg) {
         if (strcmp(arg[iarg], "out_freq") == 0) {
             out_freq = utils::inumeric(FLERR, arg[++iarg], false, lmp);
@@ -108,6 +114,7 @@ void PairNEP::settings(int narg, char** arg)
                 error->all(FLERR, "pair_style matpl/nep kspace must be ewald or pppm");
             }
             if (me == 0) utils::logmesg(lmp, "NEP-CPU kspace: " + kspace_method + "\n");
+
         }
         iarg++;
     }

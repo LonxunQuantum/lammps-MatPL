@@ -589,7 +589,6 @@ void NEPKK::reset_nep_data(int inum, int nlocal, int nall, int vflag_either) {
       nep_data.charge.resize(max_nlocal);
       nep_data.charge_derivative.resize(max_nlocal * annmb.dim);
       nep_data.D_real.resize(max_nlocal);
-      nep_data.bec.resize(max_nlocal * 9);
     }
 
     // nep_data.NN_radial.resize(max_nlocal, 0);
@@ -605,6 +604,9 @@ void NEPKK::reset_nep_data(int inum, int nlocal, int nall, int vflag_either) {
     const int virial_reduce_threads = 256;
     const int virial_reduce_blocks = (max_nall + virial_reduce_threads - 1) / virial_reduce_threads;
     nep_data.partial_virial.resize(virial_reduce_blocks * 9);
+    if (paramb.charge_mode == 2) {
+      nep_data.bec.resize(max_nall * 9);
+    }
     // nep_data.force_per_atom.resize(max_nall * 3);
     // if (vflag_either) nep_data.virial_per_atom.resize(max_nall * 6);
   }
@@ -699,6 +701,76 @@ void NEPKK::convert_C(NEP_FLOAT* d_c, int NtypeI, int Nmax, int Nbase){
 void NEPKK::set_atom_type_map(int type_nums, const int* type_list){
   atom_type_map.resize(type_nums);
   atom_type_map.copy_from_host(type_list);
+}
+
+void NEPKK::compute_bec(
+    int inum,
+    int nlocal,
+    int nall,
+    int num_neighbors,
+    const int* ilist,
+    const int* numneigh,
+    const int* firstneigh)
+{
+  if (paramb.charge_mode != 2) return;
+
+  const int block_size = 128;
+  const int grid_size = (inum + block_size - 1) / block_size;
+  nep_data.bec.fill(FLOAT_LIT(0.0));
+
+  find_bec_diagonal_lmp<<<grid_size, block_size>>>(
+    inum,
+    nall,
+    ilist,
+    nep_data.charge.data(),
+    nep_data.bec.data());
+  CUDA_CHECK_KERNEL
+
+  find_bec_radial_lmp<<<grid_size, block_size>>>(
+    inum,
+    nlocal,
+    nall,
+    num_neighbors,
+    numneigh,
+    firstneigh,
+    paramb,
+    annmb,
+    ilist,
+    lmp_data.type.data(),
+    lmp_data.position.data(),
+    nep_data.charge_derivative.data(),
+    nep_data.bec.data());
+  CUDA_CHECK_KERNEL
+
+  find_bec_angular_lmp<<<grid_size, block_size>>>(
+    inum,
+    nlocal,
+    nall,
+    nep_data.NN_angular.data(),
+    nep_data.NL_angular.data(),
+    paramb,
+    annmb,
+    ilist,
+    lmp_data.type.data(),
+    lmp_data.position.data(),
+    nep_data.charge_derivative.data(),
+    nep_data.sum_fxyz.data(),
+    nep_data.bec.data());
+  CUDA_CHECK_KERNEL
+
+  const int bec_grid_size = (nall + block_size - 1) / block_size;
+  scale_bec_lmp<<<bec_grid_size, block_size>>>(
+    nall,
+    annmb.sqrt_epsilon_inf,
+    nep_data.bec.data());
+  CUDA_CHECK_KERNEL
+  cudaDeviceSynchronize();
+}
+
+void NEPKK::copy_bec_to_host(NEP_FLOAT* host_bec, int nall)
+{
+  if (paramb.charge_mode != 2) return;
+  nep_data.bec.copy_to_host(host_bec, nall * 9);
 }
 
 // small box possibly used for active learning:

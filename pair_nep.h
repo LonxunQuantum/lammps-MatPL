@@ -30,6 +30,7 @@ namespace LAMMPS_NS {
             void unpack_reverse_comm(int, int*, double* ) override;
             void grow_memory(int nall);
             std::tuple<double, double, double, double, double, double> calc_max_error(double***, double**);
+            virtual void qnep_bec_atom(double **array, int nmax);
 
         protected:
             virtual void allocate();

@@ -51,8 +51,10 @@ class PairNEPKokkos : public PairNEP {
   int find_atomic_number(std::string& key);
   int pack_reverse_comm(int, int, double *);
   void unpack_reverse_comm(int, int *, double *);
+  void qnep_bec_atom(double **array, int nmax) override;
   std::tuple<double, double, double, double, double, double> calc_max_error(const int* ilist, const double* h_full_f, const double* h_full_e, const int num_ff, const int inum, const int nlocal, const int nall, const int rank);
  protected:
+  enum ReverseCommMode { REVERSE_NONE, REVERSE_DEVIATION_FORCE, REVERSE_BEC };
   
   // 坐标和力的一维视图包装器
    Kokkos::View<const double*, DeviceType> get_position_view() {
@@ -126,6 +128,9 @@ class PairNEPKokkos : public PairNEP {
   int eflag, vflag;
   int rank, device_id;
   std::vector<double> h_etot_virial_global;
+  ReverseCommMode reverse_comm_mode = REVERSE_NONE;
+  std::vector<double> h_bec_reverse;
+  std::vector<NEP_FLOAT> h_bec_nep_float;
   // NEP data structures - Kokkos Views for raw pointers
 
   using KKDeviceType = typename KKDevice<DeviceType>::value;

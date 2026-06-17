@@ -122,7 +122,32 @@ pair_coeff   * * Hf O
 The optional `pppm_spacing` keyword changes the target grid spacing used by
 the automatic `power2` and `friendly` modes. Its default value is `1.0`.
 
-The same option can also be written as `kspace_method ewald` or `kspace_method pppm`. Example LAMMPS inputs are provided in:
+The same option can also be written as `kspace_method ewald` or `kspace_method pppm`.
+
+### Dump Born effective charge tensors
+
+For QNEP potentials with BEC support, per-atom Born effective charge tensors can be exposed through the LAMMPS compute style `qnep/bec/atom` and written by a standard `dump custom` command.
+
+```txt
+compute      cbec all qnep/bec/atom
+
+dump         mydump all custom 100 dump.peratom id type x y z fx fy fz &
+             c_cbec[1] c_cbec[2] c_cbec[3] &
+             c_cbec[4] c_cbec[5] c_cbec[6] &
+             c_cbec[7] c_cbec[8] c_cbec[9]
+```
+
+The nine components are written in row-major tensor order:
+
+```txt
+c_cbec[1] = Zxx   c_cbec[2] = Zxy   c_cbec[3] = Zxz
+c_cbec[4] = Zyx   c_cbec[5] = Zyy   c_cbec[6] = Zyz
+c_cbec[7] = Zzx   c_cbec[8] = Zzy   c_cbec[9] = Zzz
+```
+
+The compute is intended for `pair_style matpl/nep/kk` with a `nep4_charge2` QNEP potential. It can be used with both `kspace ewald` and `kspace pppm`. The implementation follows normal LAMMPS per-atom output behavior, including reverse communication of ghost-atom BEC contributions before dumping owned atoms.
+
+Example LAMMPS inputs are provided in:
 
 ```txt
 examples/nep-charge/lmps-ewald

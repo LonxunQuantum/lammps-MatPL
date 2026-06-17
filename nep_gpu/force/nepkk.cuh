@@ -205,6 +205,16 @@ public:
   void update_potential(NEP_FLOAT* parameters, ANN& ann);
   void reset_nep_data(int inum, int n_local, int n_all, int vflag_either);
   void free_nep_data();
+  bool has_charge_bec() const { return paramb.charge_mode == 2; }
+  void compute_bec(
+    int inum,
+    int nlocal,
+    int nall,
+    int num_neighbors,
+    const int* ilist,
+    const int* numneigh,
+    const int* firstneigh);
+  void copy_bec_to_host(NEP_FLOAT* host_bec, int nall);
   void checkMemoryUsage(int sgin=0);
 
   bool getGPUMemoryStats(size_t& total_memory, size_t& used_memory, size_t& free_memory);
