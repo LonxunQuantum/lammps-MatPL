@@ -188,20 +188,6 @@ void PairNEPKokkos<DeviceType>::settings(int narg, char **arg)
     iarg++;    
   }
 
-  if (is_rank_0) {
-    utils::logmesg(lmp, "NEP Kokkos qNEP kspace method: " + kspace_method + "\n");
-    if (kspace_method == "pppm") {
-      utils::logmesg(lmp, "NEP Kokkos PPPM target mesh spacing: " + std::to_string(pppm_mesh_spacing) + "\n");
-      if (pppm_mesh_mode == 1) {
-        utils::logmesg(lmp, "NEP Kokkos PPPM mesh mode: friendly (2/3/5/7 FFT-friendly mesh)\n");
-      } else if (pppm_mesh_mode == 2) {
-        utils::logmesg(lmp, "NEP Kokkos PPPM mesh mode: explicit user mesh " + std::to_string(pppm_mesh[0]) + " " + std::to_string(pppm_mesh[1]) + " " + std::to_string(pppm_mesh[2]) + "\n");
-      } else {
-        utils::logmesg(lmp, "NEP Kokkos PPPM mesh mode: power2 (default, GPUMD-compatible). For large systems, use pppm_mesh friendly or explicit pppm_mesh Nx Ny Nz to reduce GPU memory.\n");
-      }
-    }
-  }
-
   if (is_rank_0 and num_ff > 1) {
       explrError_fp = fopen(&explrError_fname[0], "w");
       fprintf(explrError_fp, "%9s %16s %16s %16s %16s %16s %16s\n", 
@@ -232,6 +218,19 @@ void PairNEPKokkos<DeviceType>::settings(int narg, char **arg)
     nep_gpu_models[i].paramb.pppm_mesh_spacing = static_cast<NEP_FLOAT>(pppm_mesh_spacing);
     nep_gpu_models[i].paramb.pppm_mesh_mode = pppm_mesh_mode;
     for (int d = 0; d < 3; ++d) nep_gpu_models[i].paramb.pppm_mesh[d] = pppm_mesh[d];
+    if (is_rank_0 && nep_gpu_models[i].paramb.charge_mode == 2) {
+      utils::logmesg(lmp, "NEP Kokkos qNEP kspace method: " + kspace_method + "\n");
+      if (kspace_method == "pppm") {
+        utils::logmesg(lmp, "NEP Kokkos PPPM target mesh spacing: " + std::to_string(pppm_mesh_spacing) + "\n");
+        if (pppm_mesh_mode == 1) {
+          utils::logmesg(lmp, "NEP Kokkos PPPM mesh mode: friendly (2/3/5/7 FFT-friendly mesh)\n");
+        } else if (pppm_mesh_mode == 2) {
+          utils::logmesg(lmp, "NEP Kokkos PPPM mesh mode: explicit user mesh " + std::to_string(pppm_mesh[0]) + " " + std::to_string(pppm_mesh[1]) + " " + std::to_string(pppm_mesh[2]) + "\n");
+        } else {
+          utils::logmesg(lmp, "NEP Kokkos PPPM mesh mode: power2 (default, GPUMD-compatible). For large systems, use pppm_mesh friendly or explicit pppm_mesh Nx Ny Nz to reduce GPU memory.\n");
+        }
+      }
+    }
     if (i == 0) {
       cutoff = nep_gpu_models[i].paramb.rc_radial;
       cutoffsq = cutoff * cutoff;
