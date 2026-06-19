@@ -16,8 +16,7 @@ We recommend using the `kknep-pach.sh` script to automatically copy the nep code
 bash kknep-patch.sh the/path/of/lammps/rootdir
 ```
 
-* Currently, only versions stable_29Aug2024_update4 and lammps-stable_2Aug2023_update4 are supported (igher versions are not supported ) 
-* The lammps-stable_2Aug2023_update4 is more faster than stable_29Aug2024_update4 in our test.
+* Currently, versions lammps-stable-22Jul2025updata4, lammps-stable_29Aug2024_update4 and lammps-stable_2Aug2023_update4 are supported. 
 
 ## 2. load the compilation environment
 
@@ -77,9 +76,10 @@ pair_coeff       * * Hf O
 ```
 
 # Citation
-* If you use the LAMMPS interface of this nep-kokkos here, you are suggested to cite the following (`The article will be released soon`):
+* If you use the LAMMPS interface of this nep-kokkos here, you are suggested to cite the following paper:
 
-  * https://github.com/LonxunQuantum/MatPL
+  * Pengfei Suo, Xingxing Wu, Hongzhen Tian, et al. Towards Scalable and Efficient Machine-Learning Force Fields: The MatPL package and Its Advancements on Neuroevolution Potentials. ChemRxiv. 06 May 2026.
+DOI: https://doi.org/10.26434/chemrxiv.15001665/v3
 
 * If you directly or indirectly use the `NEP` class here, you are suggested to cite the following paper:
 
