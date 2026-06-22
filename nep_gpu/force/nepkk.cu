@@ -812,7 +812,8 @@ void NEPKK::compute(
   // 将中心原子的Fp放入共享内存性能几乎没有提升，块内线程处理每个近邻，导致取Fp地址缺乏连续性（在4090由于L2cache 更大，影响更明显）
   // 这部分优化思路：需要把calc3bfeature这里的粒度拆分，一个块处理一个中心原子，然后写Fp可以按照行优先存储（一个行对应一个中心原子的Fp)\
   // 此时不再存在写Fp的地址不连续问题,并且后续的backward force 可以获得收益 (wuxingxing.2026.2.28)
-  if (smem_bytes < SHAREMEM_32) {
+  const bool use_bwd_2b_perneigh = false;
+  if (use_bwd_2b_perneigh && smem_bytes < SHAREMEM_32) {
     backward_force_2b_perneigh<<<inum, BLOCK_SIZE64, smem_bytes>>>(
         vflag_either,
         cvflag_atom,
@@ -830,16 +831,19 @@ void NEPKK::compute(
         lmp_data.position.data(),
         nep_data.Fp.data(),
         force_per_atom,
-        virial_per_atom
+        cv_per_atom
     );  
   } else {
   // 32 或 64 没什么提升空间-3090
-  backward_force_2b<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>( 
+  size_t bwd_2b_smem = (USE_SHAREMEM_C2 ? annmb.num_c2 : 0) * sizeof(NEP_FLOAT);
+  bwd_2b_smem += BLOCK_SIZE64 * paramb.basis_size_radial_plus1 * sizeof(NEP_FLOAT);
+  backward_force_2b<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, bwd_2b_smem>>>( 
     vflag_either,
     cvflag_atom,
     vatom_num,
     paramb,
     annmb,
+    USE_SHAREMEM_C2,
     nall,
     inum,
     nlocal,

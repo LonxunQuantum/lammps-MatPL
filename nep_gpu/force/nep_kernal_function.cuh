@@ -447,10 +447,9 @@ static __global__ void backward_force_2b_perneigh(
         NEP_FLOAT d12 = sqrt(d12_sq);
         NEP_FLOAT d12inv = FLOAT_LIT(1.0) / d12;
         NEP_FLOAT fc12, fcp12;
-        NEP_FLOAT fn12[MAX_NUM_N], fnp12[MAX_NUM_N];
+        NEP_FLOAT fnp12[MAX_NUM_N];
         find_fc_and_fcp(paramb.rc_radial, paramb.rcinv_radial, d12, fc12, fcp12);
-        find_fn_and_fnp(paramb.basis_size_radial, paramb.rcinv_radial,
-                        d12, fc12, fcp12, fn12, fnp12);
+        find_fnp(paramb.basis_size_radial, paramb.rcinv_radial, d12, fc12, fcp12, fnp12);
 
         NEP_FLOAT f12[3] = {FLOAT_LIT(0.0)}, f21[3] = {FLOAT_LIT(0.0)};
 
@@ -586,6 +585,7 @@ static __global__ void backward_force_2b(
   int vatom_num,
   NEPKK::ParaMB paramb,
   NEPKK::ANN annmb,
+  const int use_shared_c2,
   const int nall, //all atoms
   const int N,
   const int nlocal,
@@ -601,6 +601,18 @@ static __global__ void backward_force_2b(
   // double* g_total_virial
   )
 {
+  extern __shared__ NEP_FLOAT s_c2[];
+  int c2_size = paramb.num_types * paramb.num_types *
+    paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
+  NEP_FLOAT* s_fnp12 = s_c2 + (use_shared_c2 ? c2_size : 0);
+  if (use_shared_c2) {
+    for (int i = threadIdx.x; i < c2_size; i += blockDim.x) {
+      s_c2[i] = annmb.c[i];
+    }
+  }
+  __syncthreads();
+  const NEP_FLOAT* c2 = use_shared_c2 ? s_c2 : annmb.c;
+
   int n1 = blockIdx.x * blockDim.x + threadIdx.x;
   if (n1 < N) {
     int atomi = g_ilist[n1];
@@ -622,6 +634,10 @@ static __global__ void backward_force_2b(
     NEP_FLOAT z1 = g_pos[atomi*3+2];
     int c_start = paramb.num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
     // int Fp_idx_start = atomi * annmb.dim;
+    NEP_FLOAT Fp_atomi[MAX_NUM_N];
+    for (int n = 0; n < paramb.n_max_radial_plus1; ++n) {
+      Fp_atomi[n] = g_Fp[atomi + n * nlocal];
+    }
 
     for (int i1 = 0; i1 < g_NN[atomi]; ++i1) {
       int n2_idx = i1 * num_neigh + atomi;
@@ -639,19 +655,19 @@ static __global__ void backward_force_2b(
       NEP_FLOAT f21[3] = {FLOAT_LIT(0.0)};
       // if (0) printf("2b idx %d atomi %d t1 %d jnums %d n2 %d t2 %d r12 %f\n", n1, atomi, t1, g_NN[atomi], n2, t2, d12);
       NEP_FLOAT fc12, fcp12;
-      NEP_FLOAT fn12[MAX_NUM_N];
-      NEP_FLOAT fnp12[MAX_NUM_N];
       find_fc_and_fcp(paramb.rc_radial, paramb.rcinv_radial, d12, fc12, fcp12);
-      find_fn_and_fnp(
-        paramb.basis_size_radial, paramb.rcinv_radial, d12, fc12, fcp12, fn12, fnp12);
+      NEP_FLOAT* fnp12 = s_fnp12 + threadIdx.x;
+      find_fnp_strided(
+        paramb.basis_size_radial, paramb.rcinv_radial, d12, fc12, fcp12, blockDim.x, fnp12);
       for (int n = 0; n < paramb.n_max_radial_plus1; ++n) {
         NEP_FLOAT gnp12 = FLOAT_LIT(0.0);
         NEP_FLOAT gnp21 = FLOAT_LIT(0.0);
         for (int k = 0; k < paramb.basis_size_radial_plus1; ++k) {
-          gnp12 += fnp12[k] * annmb.c[c_idx_I + n * paramb.basis_size_radial_plus1 + k];
-          gnp21 += fnp12[k] * annmb.c[c_idx_J + n * paramb.basis_size_radial_plus1 + k];// shape of c [N_max+1, N_base+1, I, J]
+          NEP_FLOAT fnp12_k = fnp12[k * blockDim.x];
+          gnp12 += fnp12_k * c2[c_idx_I + n * paramb.basis_size_radial_plus1 + k];
+          gnp21 += fnp12_k * c2[c_idx_J + n * paramb.basis_size_radial_plus1 + k];// shape of c [N_max+1, N_base+1, I, J]
         }
-        NEP_FLOAT tmp12 = g_Fp[atomi + n * nlocal] * gnp12 * d12inv; //atomi + n * nlocal (dUi/diqn)*(diqn/drij) Fp 提前放到寄存器速度变慢
+        NEP_FLOAT tmp12 = Fp_atomi[n] * gnp12 * d12inv; //atomi + n * nlocal (dUi/diqn)*(diqn/drij)
         NEP_FLOAT tmp21 = FLOAT_LIT(0.0);
         if (n2 >= nlocal) {
           for (int d = 0; d < 3; ++d) {//编译器自动展开
