@@ -62,7 +62,8 @@ static __global__ void calc_2b_descriptor_sharemem(
   NEP_FLOAT* g_Fp)
 {
   extern __shared__ NEP_FLOAT s_c[];
-  const int total_elements = paramb.num_types * paramb.num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
+  const int total_elements = paramb.sim_num_types * paramb.sim_num_types *
+    paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
   for (int i = threadIdx.x; i < total_elements; i += blockDim.x) {
     s_c[i] = param_c2[i];
   }
@@ -71,15 +72,15 @@ static __global__ void calc_2b_descriptor_sharemem(
   if (n1 < N) {
     int count_angular = 0;    
     int atomi = g_ilist[n1];
-    int t1 = g_type[atomi];
+    int t1 = static_cast<int>(paramb.nep_to_sim[g_type[atomi]]);
     NEP_FLOAT x1 = g_pos[atomi*3  ];
     NEP_FLOAT y1 = g_pos[atomi*3+1];
     NEP_FLOAT z1 = g_pos[atomi*3+2];
-    int c_start = paramb.num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
+    int c_start = paramb.sim_num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
     // get radial descriptors
     for (int i1 = 0; i1 < g_numneigh[atomi]; ++i1) {
       int n2 = g_firstneigh[i1 * num_neigh + atomi] & NEIGHMASK; //这里num_neigh 是总的原子数，与三体近邻维度是一致的。
-      int t2 = g_type[n2];
+      int t2 = static_cast<int>(paramb.nep_to_sim[g_type[n2]]);
       // if (atomi == 1) printf("calc n1 %d nn %d n2 %d\n", atomi, g_numneigh[atomi], n2);
 
       int c_idx_I = t1 * c_start + t2 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
@@ -126,7 +127,7 @@ static __global__ void calc_2b_descriptor_sharemem(
 // 2b -> q[n]; 3b NN/L 
 static __global__ void calc_2b_descriptor(
   NEPKK::ParaMB paramb,
-  NEPKK::ANN annmb,
+  const NEP_FLOAT* param_c2,
   const int N,//inum
   const int nlocal,
   int device,
@@ -144,15 +145,15 @@ static __global__ void calc_2b_descriptor(
   if (n1 < N) {
     int count_angular = 0;
     int atomi = g_ilist[n1];
-    int t1 = g_type[atomi];
+    int t1 = static_cast<int>(paramb.nep_to_sim[g_type[atomi]]);
     NEP_FLOAT x1 = g_pos[atomi*3  ];
     NEP_FLOAT y1 = g_pos[atomi*3+1];
     NEP_FLOAT z1 = g_pos[atomi*3+2];
-    int c_start = paramb.num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
+    int c_start = paramb.sim_num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
     // get radial descriptors
     for (int i1 = 0; i1 < g_numneigh[atomi]; ++i1) {
       int n2 = g_firstneigh[i1 * num_neigh + atomi] & NEIGHMASK; 
-      int t2 = g_type[n2];
+      int t2 = static_cast<int>(paramb.nep_to_sim[g_type[n2]]);
       int c_idx_I = t1 * c_start + t2 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
       NEP_FLOAT x12 = g_pos[n2*3  ] - x1;
       NEP_FLOAT y12 = g_pos[n2*3+1] - y1;
@@ -182,8 +183,7 @@ static __global__ void calc_2b_descriptor(
       for (int n = 0; n < paramb.n_max_radial_plus1; ++n) {
         NEP_FLOAT gn12 = FLOAT_LIT(0.0);
         for (int k = 0; k < paramb.basis_size_radial_plus1; ++k) {
-          gn12 += fn12[k] * annmb.c[c_idx_I + n * paramb.basis_size_radial_plus1 + k];
-          // if (n1==1 and n2 % 5 == 0) printf("2B C n1 %d t1 %d n2 %d t2 %d n %d k %d f12k=%f C=%f\n", n1, t1, n2, t2, n, k, fn12[k], annmb.c[c_idx_I + n * paramb.basis_size_radial_plus1 + k]);
+          gn12 += fn12[k] * param_c2[c_idx_I + n * paramb.basis_size_radial_plus1 + k];
         }
         g_Fp[n * nlocal + atomi] += gn12;
       } // nmax
@@ -212,7 +212,8 @@ static __global__ void calc_3b_descriptor_sharemem(
   NEP_FLOAT* g_sum_fxyz)
 {
   extern __shared__ NEP_FLOAT s_c[];
-  const int total_elements = paramb.num_types * paramb.num_types * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
+  const int total_elements = paramb.sim_num_types * paramb.sim_num_types *
+    paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
   for (int i = threadIdx.x; i < total_elements; i += blockDim.x) {
     s_c[i] = param_c3[i];
   }
@@ -220,7 +221,8 @@ static __global__ void calc_3b_descriptor_sharemem(
   int n1 = blockIdx.x * blockDim.x + threadIdx.x;
   if (n1 < N) {
     int atomi = g_ilist[n1];
-    int t1 = g_type[atomi];
+    const int nep_t1 = g_type[atomi];
+    int t1 = static_cast<int>(paramb.nep_to_sim[nep_t1]);
     NEP_FLOAT x1 = g_pos[atomi*3  ];
     NEP_FLOAT y1 = g_pos[atomi*3+1];
     NEP_FLOAT z1 = g_pos[atomi*3+2];
@@ -229,12 +231,12 @@ static __global__ void calc_3b_descriptor_sharemem(
       q[d] = g_Fp[d * nlocal + atomi];
     }
 
-    int c_start = paramb.num_types * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
+    int c_start = paramb.sim_num_types * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
     for (int n = 0; n < paramb.n_max_angular_plus1; ++n) {
       NEP_FLOAT s[NUM_OF_ABC] = {FLOAT_LIT(0.0)};
       for (int i1 = 0; i1 < g_NN_angular[atomi]; ++i1) {
         int n2 = g_NL_angular[atomi + nlocal * i1];
-        int t2 = g_type[n2];
+        int t2 = static_cast<int>(paramb.nep_to_sim[g_type[n2]]);
         int c_idx_I = t1 * c_start + t2 * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
         NEP_FLOAT x12 = g_pos[n2*3  ] - x1;
         NEP_FLOAT y12 = g_pos[n2*3+1] - y1;
@@ -266,11 +268,11 @@ static __global__ void calc_3b_descriptor_sharemem(
 
     if (paramb.version == 4) {
       apply_ann_one_layer(
-        annmb.dim, annmb.num_neurons1, annmb.w0[t1], annmb.b0[t1], annmb.w1[t1], annmb.b1, q, F, Fp, t1);
+        annmb.dim, annmb.num_neurons1, annmb.w0[nep_t1], annmb.b0[nep_t1], annmb.w1[nep_t1], annmb.b1, q, F, Fp, nep_t1);
 
     } else {
       apply_ann_one_layer_nep5(
-        annmb.dim, annmb.num_neurons1, annmb.w0[t1], annmb.b0[t1], annmb.w1[t1], annmb.b1, q, F, Fp, t1);    
+        annmb.dim, annmb.num_neurons1, annmb.w0[nep_t1], annmb.b0[nep_t1], annmb.w1[nep_t1], annmb.b1, q, F, Fp, nep_t1);
     }
 
     // if (device == 0) printf("energyEi1 %d->%d = %f\n", n1, atomi, F);
@@ -284,6 +286,7 @@ static __global__ void calc_3b_descriptor_sharemem(
 static __global__ void calc_3b_descriptor(
   NEPKK::ParaMB paramb,
   NEPKK::ANN annmb,
+  const NEP_FLOAT* param_c3,
   const int N,
   const int nlocal,
   int device,
@@ -300,7 +303,8 @@ static __global__ void calc_3b_descriptor(
   int n1 = blockIdx.x * blockDim.x + threadIdx.x;
   if (n1 < N) {
     int atomi = g_ilist[n1];
-    int t1 = g_type[atomi];
+    const int nep_t1 = g_type[atomi];
+    int t1 = static_cast<int>(paramb.nep_to_sim[nep_t1]);
     NEP_FLOAT x1 = g_pos[atomi*3  ];
     NEP_FLOAT y1 = g_pos[atomi*3+1];
     NEP_FLOAT z1 = g_pos[atomi*3+2];
@@ -308,12 +312,12 @@ static __global__ void calc_3b_descriptor(
     for (int d = 0; d < paramb.n_max_radial_plus1; ++d) {
       q[d] = g_Fp[d * nlocal + atomi];
     }
-    int c_start = paramb.num_types * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
+    int c_start = paramb.sim_num_types * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
     for (int n = 0; n < paramb.n_max_angular_plus1; ++n) {
       NEP_FLOAT s[NUM_OF_ABC] = {FLOAT_LIT(0.0)};
       for (int i1 = 0; i1 < g_NN_angular[atomi]; ++i1) {
         int n2 = g_NL_angular[atomi + nlocal * i1];
-        int t2 = g_type[n2];
+        int t2 = static_cast<int>(paramb.nep_to_sim[g_type[n2]]);
         int c_idx_I = t1 * c_start + t2 * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
         NEP_FLOAT x12 = g_pos[n2*3  ] - x1;
         NEP_FLOAT y12 = g_pos[n2*3+1] - y1;
@@ -326,7 +330,7 @@ static __global__ void calc_3b_descriptor(
         find_fn(paramb.basis_size_angular, paramb.rcinv_angular, d12, fc12, fn12);
         NEP_FLOAT gn12 = FLOAT_LIT(0.0);
         for (int k = 0; k < paramb.basis_size_angular_plus1; ++k) {
-          gn12 += fn12[k] * annmb.c[c_idx_I + n * paramb.basis_size_angular_plus1 + k + paramb.num_c_radial];
+          gn12 += fn12[k] * param_c3[c_idx_I + n * paramb.basis_size_angular_plus1 + k];
         }
         accumulate_s(paramb.L_max, d12, x12, y12, z12, gn12, s);
       }
@@ -345,11 +349,11 @@ static __global__ void calc_3b_descriptor(
 
     if (paramb.version == 4) {
       apply_ann_one_layer(
-        annmb.dim, annmb.num_neurons1, annmb.w0[t1], annmb.b0[t1], annmb.w1[t1], annmb.b1, q, F, Fp, t1);
+        annmb.dim, annmb.num_neurons1, annmb.w0[nep_t1], annmb.b0[nep_t1], annmb.w1[nep_t1], annmb.b1, q, F, Fp, nep_t1);
 
     } else {
       apply_ann_one_layer_nep5(
-        annmb.dim, annmb.num_neurons1, annmb.w0[t1], annmb.b0[t1], annmb.w1[t1], annmb.b1, q, F, Fp, t1);    
+        annmb.dim, annmb.num_neurons1, annmb.w0[nep_t1], annmb.b0[nep_t1], annmb.w1[nep_t1], annmb.b1, q, F, Fp, nep_t1);
     }
 
     // if (device == 0) printf("energyEi1 %d->%d = %f\n", n1, atomi, F);
@@ -365,7 +369,7 @@ static __global__ void backward_force_2b_perneigh(
     int cvflag_atom,
     int vatom_num,
     NEPKK::ParaMB paramb,
-    NEPKK::ANN annmb,
+    const NEP_FLOAT* param_c2,
     const int nall,
     const int N,               // inum
     const int nlocal,
@@ -415,7 +419,7 @@ static __global__ void backward_force_2b_perneigh(
     }
     int tid = threadIdx.x;
     int atomi = g_ilist[blockIdx.x];   // 每个 block 处理一个中心原子
-    int t1 = g_type[atomi];
+    int t1 = static_cast<int>(paramb.nep_to_sim[g_type[atomi]]);
 
     NEP_FLOAT x1 = g_pos[atomi*3];
     NEP_FLOAT y1 = g_pos[atomi*3+1];
@@ -426,7 +430,7 @@ static __global__ void backward_force_2b_perneigh(
     NEP_FLOAT sxyi = FLOAT_LIT(0.0), sxzi = FLOAT_LIT(0.0), syzi = FLOAT_LIT(0.0);
     NEP_FLOAT syxi = FLOAT_LIT(0.0), szxi = FLOAT_LIT(0.0), szyi = FLOAT_LIT(0.0);
 
-    int c_start = paramb.num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
+    int c_start = paramb.sim_num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
     int num_neigh_i = g_NN[atomi];
     if (tid < paramb.n_max_radial_plus1) {// 线程块大小一定是两体feature大的
       s_g_Fp[tid] = g_Fp[atomi + tid * nlocal];
@@ -436,7 +440,7 @@ static __global__ void backward_force_2b_perneigh(
     for (int off = tid; off < num_neigh_i; off += blockDim.x) {
         int n2_idx = off * num_neigh + atomi;
         int n2 = g_NL[n2_idx] & NEIGHMASK;
-        int t2 = g_type[n2];
+        int t2 = static_cast<int>(paramb.nep_to_sim[g_type[n2]]);
         int c_idx_I = t1 * c_start + t2 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
         int c_idx_J = t2 * c_start + t1 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
 
@@ -456,8 +460,8 @@ static __global__ void backward_force_2b_perneigh(
         for (int n = 0; n < paramb.n_max_radial_plus1; ++n) {
             NEP_FLOAT gnp12 = FLOAT_LIT(0.0), gnp21 = FLOAT_LIT(0.0);
             for (int k = 0; k < paramb.basis_size_radial_plus1; ++k) {
-                gnp12 += fnp12[k] * annmb.c[c_idx_I + n * paramb.basis_size_radial_plus1 + k];
-                gnp21 += fnp12[k] * annmb.c[c_idx_J + n * paramb.basis_size_radial_plus1 + k];
+                gnp12 += fnp12[k] * param_c2[c_idx_I + n * paramb.basis_size_radial_plus1 + k];
+                gnp21 += fnp12[k] * param_c2[c_idx_J + n * paramb.basis_size_radial_plus1 + k];
             }
             NEP_FLOAT tmp12 = s_g_Fp[n] * gnp12 * d12inv; //g_Fp[atomi + n * nlocal]
             NEP_FLOAT tmp21 = FLOAT_LIT(0.0);
@@ -584,7 +588,7 @@ static __global__ void backward_force_2b(
   int cvflag_atom,
   int vatom_num,
   NEPKK::ParaMB paramb,
-  NEPKK::ANN annmb,
+  const NEP_FLOAT* param_c2,
   const int use_shared_c2,
   const int nall, //all atoms
   const int N,
@@ -602,21 +606,21 @@ static __global__ void backward_force_2b(
   )
 {
   extern __shared__ NEP_FLOAT s_c2[];
-  int c2_size = paramb.num_types * paramb.num_types *
+  int c2_size = paramb.sim_num_types * paramb.sim_num_types *
     paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
   NEP_FLOAT* s_fnp12 = s_c2 + (use_shared_c2 ? c2_size : 0);
   if (use_shared_c2) {
     for (int i = threadIdx.x; i < c2_size; i += blockDim.x) {
-      s_c2[i] = annmb.c[i];
+      s_c2[i] = param_c2[i];
     }
   }
   __syncthreads();
-  const NEP_FLOAT* c2 = use_shared_c2 ? s_c2 : annmb.c;
+  const NEP_FLOAT* c2 = use_shared_c2 ? s_c2 : param_c2;
 
   int n1 = blockIdx.x * blockDim.x + threadIdx.x;
   if (n1 < N) {
     int atomi = g_ilist[n1];
-    int t1 = g_type[atomi];
+    int t1 = static_cast<int>(paramb.nep_to_sim[g_type[atomi]]);
     NEP_FLOAT s_fx = FLOAT_LIT(0.0);
     NEP_FLOAT s_fy = FLOAT_LIT(0.0);
     NEP_FLOAT s_fz = FLOAT_LIT(0.0);
@@ -632,7 +636,7 @@ static __global__ void backward_force_2b(
     NEP_FLOAT x1 = g_pos[atomi*3  ];
     NEP_FLOAT y1 = g_pos[atomi*3+1];
     NEP_FLOAT z1 = g_pos[atomi*3+2];
-    int c_start = paramb.num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
+    int c_start = paramb.sim_num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
     // int Fp_idx_start = atomi * annmb.dim;
     NEP_FLOAT Fp_atomi[MAX_NUM_N];
     for (int n = 0; n < paramb.n_max_radial_plus1; ++n) {
@@ -642,7 +646,7 @@ static __global__ void backward_force_2b(
     for (int i1 = 0; i1 < g_NN[atomi]; ++i1) {
       int n2_idx = i1 * num_neigh + atomi;
       int n2 = g_NL[n2_idx] & NEIGHMASK;
-      int t2 = g_type[n2];
+      int t2 = static_cast<int>(paramb.nep_to_sim[g_type[n2]]);
       int c_idx_I = t1 * c_start + t2 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
       int c_idx_J = t2 * c_start + t1 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
 
@@ -751,7 +755,7 @@ static __global__ void backward_force_2b(
 
 __global__ void backward_force_3b_per_atom_sharemem(
     NEPKK::ParaMB paramb,
-    NEPKK::ANN annmb,
+    const NEP_FLOAT* param_c3,
     int N,
     int nlocal,
     const int* g_NN_angular,
@@ -770,7 +774,7 @@ __global__ void backward_force_3b_per_atom_sharemem(
     if (i >= N) return;
 
     int atomi = g_ilist[i];
-    int t1    = g_type[atomi];
+    int t1 = static_cast<int>(paramb.nep_to_sim[g_type[atomi]]);
 
     NEP_FLOAT* s_x1       = shmem + 0;                           // 1
     NEP_FLOAT* s_y1       = shmem + 1;                           // 1
@@ -782,6 +786,9 @@ __global__ void backward_force_3b_per_atom_sharemem(
     NEP_FLOAT* s_fn_base = s_sum_fxyz + (paramb.n_max_angular_plus1 * NUM_OF_ABC);
     NEP_FLOAT* s_fn  = s_fn_base + threadIdx.x * per_thread_fn_size;
     NEP_FLOAT* s_fnp = s_fn + MAX_NUM_N;
+    NEP_FLOAT* s_c3 = s_fn_base + blockDim.x * per_thread_fn_size;
+    const int c3_size = paramb.sim_num_types * paramb.sim_num_types *
+      paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
 
     // ==============================
     //  由 warp 0 负责加载中心原子公共数据
@@ -802,6 +809,9 @@ __global__ void backward_force_3b_per_atom_sharemem(
         for (int d = threadIdx.x; d < sum_size; d += blockDim.x) {
             s_sum_fxyz[d] = g_sum_fxyz[d * nlocal + atomi];
         }
+        for (int d = threadIdx.x; d < c3_size; d += blockDim.x) {
+            s_c3[d] = param_c3[d];
+        }
     }
     __syncthreads();
 
@@ -813,7 +823,7 @@ __global__ void backward_force_3b_per_atom_sharemem(
     for (int i1 = threadIdx.x; i1 < nn; i1 += blockDim.x) {
         int index = i1 * nlocal + atomi;
         int n2    = g_NL_angular[index];
-        int t2    = g_type[n2];
+        int t2 = static_cast<int>(paramb.nep_to_sim[g_type[n2]]);
 
         NEP_FLOAT r12[3] = {
             g_pos[n2 * 3 + 0] - s_x1[0],
@@ -834,7 +844,7 @@ __global__ void backward_force_3b_per_atom_sharemem(
             s_fn, s_fnp
         );
 
-        int c_start = paramb.num_types * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
+        int c_start = paramb.sim_num_types * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
         int c_idx_I = t1 * c_start + t2 * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
         NEP_FLOAT f12_local[3] = {FLOAT_LIT(0.0), FLOAT_LIT(0.0), FLOAT_LIT(0.0)};
         for (int n = 0; n < paramb.n_max_angular_plus1; ++n) {
@@ -842,9 +852,9 @@ __global__ void backward_force_3b_per_atom_sharemem(
             NEP_FLOAT gnp12 = FLOAT_LIT(0.0);
 
             for (int k = 0; k < paramb.basis_size_angular_plus1; ++k) {
-                int idx = c_idx_I + n * paramb.basis_size_angular_plus1 + k + paramb.num_c_radial;
-                gn12  += s_fn[k]  * annmb.c[idx];
-                gnp12 += s_fnp[k] * annmb.c[idx];
+                int idx = c_idx_I + n * paramb.basis_size_angular_plus1 + k;
+                gn12  += s_fn[k]  * s_c3[idx];
+                gnp12 += s_fnp[k] * s_c3[idx];
             }
 
             accumulate_f12(
@@ -869,7 +879,7 @@ __global__ void backward_force_3b_per_atom_sharemem(
 
 static __global__ void backward_force_3b_dqnl(
   NEPKK::ParaMB paramb,
-  NEPKK::ANN annmb,
+  const NEP_FLOAT* param_c3,
   const int N,
   const int nlocal,
   const int* g_NN_angular,
@@ -897,15 +907,15 @@ static __global__ void backward_force_3b_dqnl(
       sum_fxyz[d] = g_sum_fxyz[d * nlocal + atomi];
     }
 
-    int   t1 = g_type[atomi];
+    int t1 = static_cast<int>(paramb.nep_to_sim[g_type[atomi]]);
     NEP_FLOAT x1 = g_pos[atomi*3  ];
     NEP_FLOAT y1 = g_pos[atomi*3+1];
     NEP_FLOAT z1 = g_pos[atomi*3+2];
-    int c_start = paramb.num_types * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
+    int c_start = paramb.sim_num_types * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
     for (int i1 = 0; i1 < g_NN_angular[atomi]; ++i1) {
       int index = i1 * nlocal + atomi;
       int n2 = g_NL_angular[index];
-      int t2 = g_type[n2];
+      int t2 = static_cast<int>(paramb.nep_to_sim[g_type[n2]]);
       
       NEP_FLOAT f12[3] = {FLOAT_LIT(0.0)};
       int c_idx_I = t1 * c_start + t2 * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
@@ -922,8 +932,8 @@ static __global__ void backward_force_3b_dqnl(
         NEP_FLOAT gn12 = FLOAT_LIT(0.0);
         NEP_FLOAT gnp12 = FLOAT_LIT(0.0);
         for (int k = 0; k < paramb.basis_size_angular_plus1; ++k) {
-          gn12  += fn12[k]  * annmb.c[c_idx_I + n * paramb.basis_size_angular_plus1 + k + paramb.num_c_radial];
-          gnp12 += fnp12[k] * annmb.c[c_idx_I + n * paramb.basis_size_angular_plus1 + k + paramb.num_c_radial];
+          gn12  += fn12[k]  * param_c3[c_idx_I + n * paramb.basis_size_angular_plus1 + k];
+          gnp12 += fnp12[k] * param_c3[c_idx_I + n * paramb.basis_size_angular_plus1 + k];
         }
         accumulate_f12(
           paramb.L_max,

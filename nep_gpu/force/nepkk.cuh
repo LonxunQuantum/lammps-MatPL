@@ -32,6 +32,7 @@ In the read_neptxt function for parsing NEP.txt is adapted from the GPUMD source
 #pragma once
 #include "../utilities/common.cuh"
 #include "../utilities/gpu_vector.cuh"
+#include <cstdint>
 #include <tuple>
 #include <utility> // for std::move
 // #include <Kokkos_Core.hpp>
@@ -94,6 +95,8 @@ public:
     int num_types_sq = 0;       // for nep3
     int num_c_radial = 0;       // for nep3
     int num_types = 0;
+    int sim_num_types = 0;
+    int8_t nep_to_sim[NUM_ELEMENTS];
     NEP_FLOAT q_scaler[140];
   };
 
@@ -184,4 +187,15 @@ public:
   int rank;
   int ff_index;
   double* cv_per_atom;
+
+private:
+  int sim_num_types_ = 0;
+  std::vector<int> sim_type_set_;
+  std::vector<int> configured_type_map_;
+  bool type_map_initialized_ = false;
+  bool slimmed_coeffs_ready_ = false;
+
+  void rebuild_slimmed_coeffs_();
 };
+
+static_assert(NUM_ELEMENTS <= 128, "int8_t NEP-to-simulation map is too small");
