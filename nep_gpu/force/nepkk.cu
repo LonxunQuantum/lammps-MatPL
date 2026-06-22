@@ -952,33 +952,18 @@ void NEPKK::compute(
     cv_per_atom
     );
   }
-  int shm_float_count = 3 + paramb.dim_angular + paramb.n_max_angular_plus1 * NUM_OF_ABC;
-  shm_float_count += BLOCK_SIZE32 * MAX_NUM_N * 2;// 168个寄存器使用, block 64 会导致共享内存翻倍，驻留block减少
-  size_t shared_bytes =
-    (static_cast<size_t>(shm_float_count) + nep_data.param_c3.size()) * sizeof(NEP_FLOAT);
-  if (shared_bytes < SHAREMEM_32) {
-    dim3 grid(inum); // 中心原子数
-    dim3 block(BLOCK_SIZE32);
-    backward_force_3b_per_atom_sharemem<<<grid, block, shared_bytes>>>(
-        paramb,
-        nep_data.param_c3.data(),
-        inum,
-        nlocal,
-        nep_data.NN_angular.data(),
-        nep_data.NL_angular.data(),
-        ilist,
-        lmp_data.type.data(),
-        lmp_data.position.data(),
-        nep_data.Fp.data(),
-        nep_data.sum_fxyz.data(),
-        nep_data.f12x.data(),
-        nep_data.f12y.data(),
-        nep_data.f12z.data()
-    );
-  } else {
-    backward_force_3b_dqnl<<<(inum - 1) / BLOCK_SIZE32 + 1, BLOCK_SIZE32>>>(
+  const size_t bwd_3b_fn_bytes =
+    static_cast<size_t>(2) * BLOCK_SIZE64 * paramb.basis_size_angular_plus1 * sizeof(NEP_FLOAT);
+  const size_t compact_c3_bytes = nep_data.param_c3.size() * sizeof(NEP_FLOAT);
+  const bool use_bwd_3b_shared_c3 =
+    USE_SHAREMEM_C3 && compact_c3_bytes + bwd_3b_fn_bytes < SHAREMEM_32;
+  const size_t bwd_3b_smem = bwd_3b_fn_bytes +
+    (use_bwd_3b_shared_c3 ? compact_c3_bytes : 0);
+  backward_force_3b_dqnl<<<
+    (inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, bwd_3b_smem>>>(
       paramb,
       nep_data.param_c3.data(),
+      use_bwd_3b_shared_c3,
       inum,
       nlocal,
       nep_data.NN_angular.data(),
@@ -991,8 +976,7 @@ void NEPKK::compute(
       nep_data.f12x.data(),
       nep_data.f12y.data(),
       nep_data.f12z.data()
-      );
-  }
+    );
   CUDA_CHECK_KERNEL
   cudaDeviceSynchronize();
 

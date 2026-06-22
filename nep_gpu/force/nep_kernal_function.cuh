@@ -880,6 +880,7 @@ __global__ void backward_force_3b_per_atom_sharemem(
 static __global__ void backward_force_3b_dqnl(
   NEPKK::ParaMB paramb,
   const NEP_FLOAT* param_c3,
+  const int use_shared_c3,
   const int N,
   const int nlocal,
   const int* g_NN_angular,
@@ -894,6 +895,20 @@ static __global__ void backward_force_3b_dqnl(
   NEP_FLOAT* g_f12z
   )
 {
+  extern __shared__ NEP_FLOAT s_c3[];
+  const int c3_size = paramb.sim_num_types * paramb.sim_num_types *
+    paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
+  const int fn_size = blockDim.x * paramb.basis_size_angular_plus1;
+  NEP_FLOAT* s_fn = s_c3 + (use_shared_c3 ? c3_size : 0);
+  NEP_FLOAT* s_fnp = s_fn + fn_size;
+  if (use_shared_c3) {
+    for (int i = threadIdx.x; i < c3_size; i += blockDim.x) {
+      s_c3[i] = param_c3[i];
+    }
+  }
+  __syncthreads();
+  const NEP_FLOAT* c3 = use_shared_c3 ? s_c3 : param_c3;
+
   int n1 = blockIdx.x * blockDim.x + threadIdx.x;
   if (n1 < N) {
     int atomi = g_ilist[n1];
@@ -924,16 +939,25 @@ static __global__ void backward_force_3b_dqnl(
       // if (0) printf("3bhalf idx %d atomi %d t1 %d jnums %d n2 %d t2 %d r12 %f fixyz %f %f %f fjxyz %f %f %f\n", n1, atomi, t1, g_NN_angular[atomi], n2, t2, d12, x1, y1, z1, g_pos[n2*3], g_pos[n2*3+1], g_pos[n2*3+2]);
       NEP_FLOAT fc12, fcp12;
       find_fc_and_fcp(paramb.rc_angular, paramb.rcinv_angular, d12, fc12, fcp12);
-      NEP_FLOAT fn12[MAX_NUM_N];
-      NEP_FLOAT fnp12[MAX_NUM_N];
-      find_fn_and_fnp(
-        paramb.basis_size_angular, paramb.rcinv_angular, d12, fc12, fcp12, fn12, fnp12);
+      NEP_FLOAT* fn12 = s_fn + threadIdx.x;
+      NEP_FLOAT* fnp12 = s_fnp + threadIdx.x;
+      find_fn_and_fnp_strided(
+        paramb.basis_size_angular,
+        paramb.rcinv_angular,
+        d12,
+        fc12,
+        fcp12,
+        blockDim.x,
+        fn12,
+        fnp12);
       for (int n = 0; n < paramb.n_max_angular_plus1; ++n) {
         NEP_FLOAT gn12 = FLOAT_LIT(0.0);
         NEP_FLOAT gnp12 = FLOAT_LIT(0.0);
         for (int k = 0; k < paramb.basis_size_angular_plus1; ++k) {
-          gn12  += fn12[k]  * param_c3[c_idx_I + n * paramb.basis_size_angular_plus1 + k];
-          gnp12 += fnp12[k] * param_c3[c_idx_I + n * paramb.basis_size_angular_plus1 + k];
+          const int basis_index = k * blockDim.x;
+          const NEP_FLOAT coefficient = c3[c_idx_I + n * paramb.basis_size_angular_plus1 + k];
+          gn12 += fn12[basis_index] * coefficient;
+          gnp12 += fnp12[basis_index] * coefficient;
         }
         accumulate_f12(
           paramb.L_max,

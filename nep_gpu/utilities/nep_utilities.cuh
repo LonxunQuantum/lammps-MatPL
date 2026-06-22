@@ -401,6 +401,46 @@ static __device__ __host__ __forceinline__ void find_fn_and_fnp(
   }
 }
 
+static __device__ __host__ __forceinline__ void find_fn_and_fnp_strided(
+  const int n_max,
+  const NEP_FLOAT rcinv,
+  const NEP_FLOAT d12,
+  const NEP_FLOAT fc12,
+  const NEP_FLOAT fcp12,
+  const int stride,
+  NEP_FLOAT* fn,
+  NEP_FLOAT* fnp)
+{
+  NEP_FLOAT d12_mul_rcinv = d12 * rcinv;
+  NEP_FLOAT x = FLOAT_LIT(2.0) * (d12_mul_rcinv - FLOAT_LIT(1.0)) *
+    (d12_mul_rcinv - FLOAT_LIT(1.0)) - FLOAT_LIT(1.0);
+  fn[0] = fc12;
+  fnp[0] = fcp12;
+  fn[stride] = (x + FLOAT_LIT(1.0)) * FLOAT_LIT(0.5) * fc12;
+  fnp[stride] = FLOAT_LIT(2.0) * (d12_mul_rcinv - FLOAT_LIT(1.0)) * rcinv * fc12 +
+    (x + FLOAT_LIT(1.0)) * FLOAT_LIT(0.5) * fcp12;
+  NEP_FLOAT u0 = FLOAT_LIT(1.0);
+  NEP_FLOAT u1 = FLOAT_LIT(2.0) * x;
+  NEP_FLOAT u2;
+  NEP_FLOAT fn_m_minus_2 = FLOAT_LIT(1.0);
+  NEP_FLOAT fn_m_minus_1 = x;
+  for (int m = 2; m <= n_max; ++m) {
+    NEP_FLOAT fn_tmp1 = FLOAT_LIT(2.0) * x * fn_m_minus_1 - fn_m_minus_2;
+    fn_m_minus_2 = fn_m_minus_1;
+    fn_m_minus_1 = fn_tmp1;
+    NEP_FLOAT fnp_tmp = m * u1;
+    u2 = FLOAT_LIT(2.0) * x * u1 - u0;
+    u0 = u1;
+    u1 = u2;
+
+    NEP_FLOAT fn_tmp2 = (fn_tmp1 + FLOAT_LIT(1.0)) * FLOAT_LIT(0.5);
+    fnp[m * stride] =
+      (fnp_tmp * FLOAT_LIT(2.0) * (d12_mul_rcinv - FLOAT_LIT(1.0)) * rcinv) * fc12 +
+      fn_tmp2 * fcp12;
+    fn[m * stride] = fn_tmp2 * fc12;
+  }
+}
+
 static __device__ __host__ __forceinline__ void find_fnp(
   const int n_max,
   const NEP_FLOAT rcinv,
