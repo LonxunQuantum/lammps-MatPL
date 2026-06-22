@@ -118,6 +118,16 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
     paramb.model_type = 0;
     paramb.version = 5;
     zbl.enabled = true;
+  } else if (tokens[0] == "nep5_charge2") {
+    paramb.model_type = 0;
+    paramb.version = 5;
+    paramb.charge_mode = 2;
+    zbl.enabled = false;
+  } else if (tokens[0] == "nep5_zbl_charge2") {
+    paramb.model_type = 0;
+    paramb.version = 5;
+    paramb.charge_mode = 2;
+    zbl.enabled = true;
   }
   paramb.num_types = get_int_from_token(tokens[1], __FILE__, __LINE__);
   if (tokens.size() != 2 + paramb.num_types) {
@@ -324,6 +334,9 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
   
   if (paramb.charge_mode == 2) {
     annmb.num_para_ann = (annmb.dim + 3) * annmb.num_neurons1 * paramb.num_types + 2;
+    if (paramb.version == 5) {
+      annmb.num_para_ann += paramb.num_types;
+    }
   } else if (paramb.version == 4) {
     annmb.num_para_ann = (annmb.dim + 2) * annmb.num_neurons1 * paramb.num_types;
   } else { // 5
@@ -341,7 +354,7 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
   }
 
   if (paramb.charge_mode == 2) {
-    is_gpumd_nep = true;
+    is_gpumd_nep = (paramb.version == 4);
   } else if (paramb.num_types == 1) {
     is_gpumd_nep = false;
   } else if (paramb.version == 4) {
@@ -651,6 +664,9 @@ void NEPKK::update_potential(NEP_FLOAT* parameters, ANN& ann)
       pointer += ann.num_neurons1;
       ann.w1[t] = pointer;
       pointer += ann.num_neurons1 * num_outputs;
+      if (paramb.version == 5) {
+        pointer += 1;
+      }
     }
     ann.sqrt_epsilon_inf = pointer;
     pointer += 1;

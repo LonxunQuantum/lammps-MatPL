@@ -195,7 +195,8 @@ static __device__ void apply_ann_one_layer_charge(
   NEP_FLOAT& energy,
   NEP_FLOAT* energy_derivative,
   NEP_FLOAT& charge,
-  NEP_FLOAT* charge_derivative)
+  NEP_FLOAT* charge_derivative,
+  const int model_version)
 {
   for (int n = 0; n < N_neu; ++n) {
     NEP_FLOAT w0_times_q = FLOAT_LIT(0.0);
@@ -212,7 +213,7 @@ static __device__ void apply_ann_one_layer_charge(
       charge_derivative[d] += w1[n + N_neu] * y1;
     }
   }
-  energy -= b1[0];
+  energy -= (model_version == 5 ? w1[N_neu * 2] + b1[0] : b1[0]);
 }
 
 static __device__ __forceinline__ void find_fc(NEP_FLOAT rc, NEP_FLOAT rcinv, NEP_FLOAT d12, NEP_FLOAT& fc)

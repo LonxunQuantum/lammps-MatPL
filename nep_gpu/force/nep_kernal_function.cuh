@@ -279,7 +279,8 @@ static __global__ void calc_3b_descriptor_sharemem(
         F,
         Fp,
         charge,
-        charge_derivative);
+        charge_derivative,
+        paramb.version);
     } else if (paramb.version == 4) {
       apply_ann_one_layer(
         annmb.dim, annmb.num_neurons1, annmb.w0[t1], annmb.b0[t1], annmb.w1[t1], annmb.b1, q, F, Fp, t1);
@@ -380,7 +381,8 @@ static __global__ void calc_3b_descriptor(
         F,
         Fp,
         charge,
-        charge_derivative);
+        charge_derivative,
+        paramb.version);
     } else if (paramb.version == 4) {
       apply_ann_one_layer(
         annmb.dim, annmb.num_neurons1, annmb.w0[t1], annmb.b0[t1], annmb.w1[t1], annmb.b1, q, F, Fp, t1);
