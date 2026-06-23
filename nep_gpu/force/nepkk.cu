@@ -857,40 +857,43 @@ void NEPKK::compute(
     size_t shared_mem_size = nep_data.param_c3.size() * sizeof(NEP_FLOAT);
     calc_3b_descriptor_sharemem<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, shared_mem_size>>>(
       paramb,
-      annmb,
       nep_data.param_c3.data(),
       inum,
       nlocal,
-      device,
-      annmb.dim,
       nep_data.NN_angular.data(),
       nep_data.NL_angular.data(),
       ilist,
       lmp_data.type.data(),
       lmp_data.position.data(),
       nep_data.Fp.data(),
-      nep_data.potential_per_atom.data(),
       nep_data.sum_fxyz.data());
     CUDA_CHECK_KERNEL
   } else {// 不使用共享内存的版本，系数C直接从全局内存中读取
     calc_3b_descriptor<<<(inum - 1) / BLOCK_SIZE32 + 1, BLOCK_SIZE32>>>(
       paramb,
-      annmb,
       nep_data.param_c3.data(),
       inum,
       nlocal,
-      device,
-      annmb.dim,
       nep_data.NN_angular.data(),
       nep_data.NL_angular.data(),
       ilist,
       lmp_data.type.data(),
       lmp_data.position.data(),
       nep_data.Fp.data(),
-      nep_data.potential_per_atom.data(),
       nep_data.sum_fxyz.data());
     CUDA_CHECK_KERNEL
   }
+
+  apply_ann<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>(
+    paramb,
+    annmb,
+    inum,
+    nlocal,
+    ilist,
+    lmp_data.type.data(),
+    nep_data.Fp.data(),
+    nep_data.potential_per_atom.data());
+  CUDA_CHECK_KERNEL
 
   size_t smem_bytes = 3 * sizeof(NEP_FLOAT) * BLOCK_SIZE64;  // 力分量 fx,fy,fz
   if (vflag_either) {

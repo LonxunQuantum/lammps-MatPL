@@ -17,26 +17,25 @@
 - Modify: `nep_gpu/force/nep_kernal_function.cuh`
 - Modify: `nep_gpu/force/nepkk.cu`
 
-- [ ] Record the `dbb5b2b` WMoTaV energy/force/virial baseline.
-- [ ] Run source assertions that fail while `fn12[MAX_NUM_N]` remains and the ANN call remains inside descriptor kernels.
+- [x] Record the `dbb5b2b` WMoTaV energy/force/virial baseline.
+- [x] Run source assertions that fail while `fn12[MAX_NUM_N]` remains and the ANN call remains inside descriptor kernels.
 
 ### Task 2: Stream the C3 basis dot product
 
-- [ ] Add a runtime-sized streaming helper beside `find_fn` that returns `gn12` without an array.
-- [ ] Replace the `fn12` allocation and coefficient loop in both 3B descriptor variants.
-- [ ] Compile and compare numerical output with the baseline.
+- [x] Add a runtime-sized streaming helper beside `find_fn` that returns `gn12` without an array.
+- [x] Replace the `fn12` allocation and coefficient loop in both 3B descriptor variants.
+- [x] Compile and compare numerical output with the baseline.
 
 ### Task 3: Split descriptor and ANN
 
-- [ ] Change `find_q` to support a strided destination and write angular q directly to SoA `g_Fp`.
-- [ ] Remove ANN parameters, q/Fp arrays, scaling, energy, and ANN calls from both descriptor kernels.
-- [ ] Add a generic thread-per-atom ANN kernel that reads q from SoA `g_Fp` and performs safe in-place overwrite after all neuron work.
-- [ ] Launch the ANN kernel after either descriptor path using 64 threads per block.
+- [x] Change `find_q` to support a strided destination and write angular q directly to SoA `g_Fp`.
+- [x] Remove ANN parameters, q/Fp arrays, scaling, energy, and ANN calls from both descriptor kernels.
+- [x] Add a generic thread-per-atom ANN kernel that reads q from SoA `g_Fp` and performs safe in-place overwrite after all neuron work.
+- [x] Launch the ANN kernel after either descriptor path using 64 threads per block.
 
 ### Task 4: Verify
 
-- [ ] Run source assertions and CUDA compilation.
-- [ ] Run WMoTaV numerical comparison for energy, force, and virial.
-- [ ] Inspect register and stack resources.
-- [ ] Profile descriptor plus ANN and compare their combined time and stalls with the 22.05 ms baseline.
-
+- [x] Run source assertions and CUDA compilation.
+- [x] Run WMoTaV numerical comparison for energy, force, and virial.
+- [x] Inspect register and stack resources.
+- [x] Profile descriptor plus ANN and compare their combined time and stalls with the 22.05 ms baseline.
