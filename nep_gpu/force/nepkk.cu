@@ -887,7 +887,10 @@ void NEPKK::compute(
     CUDA_CHECK_KERNEL
   }
 
-  apply_ann_forward<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>(
+  const size_t ann_q_smem = static_cast<size_t>(annmb.dim) *
+    BLOCK_SIZE64 * sizeof(NEP_FLOAT);
+  apply_ann_forward<<<
+    (inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, ann_q_smem>>>(
     paramb,
     annmb,
     inum,

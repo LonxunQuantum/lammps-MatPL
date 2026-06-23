@@ -328,9 +328,17 @@ static __global__ void apply_ann_forward(
   double* g_pe,
   NEP_FLOAT* g_ann_alpha)
 {
+  extern __shared__ NEP_FLOAT s_q[];
   const int n1 = blockIdx.x * blockDim.x + threadIdx.x;
-  if (n1 < N) {
-    const int atomi = g_ilist[n1];
+  const bool active = n1 < N;
+  const int atomi = active ? g_ilist[n1] : 0;
+  for (int d = 0; d < annmb.dim; ++d) {
+    s_q[d * blockDim.x + threadIdx.x] = active ?
+      g_Fp[d * nlocal + atomi] * Q_SCALER[d] : FLOAT_LIT(0.0);
+  }
+  __syncthreads();
+
+  if (active) {
     const int nep_t1 = g_type[atomi];
     const NEP_FLOAT* w0 = annmb.w0[nep_t1];
     const NEP_FLOAT* b0 = annmb.b0[nep_t1];
@@ -339,7 +347,7 @@ static __global__ void apply_ann_forward(
     for (int n = 0; n < annmb.num_neurons1; ++n) {
       NEP_FLOAT w0_times_q = FLOAT_LIT(0.0);
       for (int d = 0; d < annmb.dim; ++d) {
-        const NEP_FLOAT q = g_Fp[d * nlocal + atomi] * Q_SCALER[d];
+        const NEP_FLOAT q = s_q[d * blockDim.x + threadIdx.x];
         w0_times_q += w0[n * annmb.dim + d] * q;
       }
       const NEP_FLOAT x1 = tanh(w0_times_q - b0[n]);
