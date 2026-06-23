@@ -317,15 +317,16 @@ static __global__ void calc_3b_descriptor(
   } // if
 } // function
 
-static __global__ void apply_ann(
+static __global__ void apply_ann_forward(
   NEPKK::ParaMB paramb,
   NEPKK::ANN annmb,
   const int N,
   const int nlocal,
   const int* __restrict__ g_ilist,
   const int* __restrict__ g_type,
-  NEP_FLOAT* g_Fp,
-  double* g_pe)
+  const NEP_FLOAT* __restrict__ g_Fp,
+  double* g_pe,
+  NEP_FLOAT* g_ann_alpha)
 {
   const int n1 = blockIdx.x * blockDim.x + threadIdx.x;
   if (n1 < N) {
@@ -335,7 +336,6 @@ static __global__ void apply_ann(
     const NEP_FLOAT* b0 = annmb.b0[nep_t1];
     const NEP_FLOAT* w1 = annmb.w1[nep_t1];
     NEP_FLOAT F = FLOAT_LIT(0.0);
-    NEP_FLOAT Fp[MAX_DIM] = {FLOAT_LIT(0.0)};
     for (int n = 0; n < annmb.num_neurons1; ++n) {
       NEP_FLOAT w0_times_q = FLOAT_LIT(0.0);
       for (int d = 0; d < annmb.dim; ++d) {
@@ -345,10 +345,7 @@ static __global__ void apply_ann(
       const NEP_FLOAT x1 = tanh(w0_times_q - b0[n]);
       const NEP_FLOAT tanh_der = FLOAT_LIT(1.0) - x1 * x1;
       F += w1[n] * x1;
-      for (int d = 0; d < annmb.dim; ++d) {
-        const NEP_FLOAT y1 = tanh_der * w0[n * annmb.dim + d];
-        Fp[d] += w1[n] * y1;
-      }
+      g_ann_alpha[n * N + n1] = w1[n] * tanh_der;
     }
     if (paramb.version == 4) {
       F -= annmb.b1[nep_t1];
@@ -356,8 +353,45 @@ static __global__ void apply_ann(
       F -= w1[annmb.num_neurons1] + annmb.b1[0];
     }
     g_pe[atomi] += F;
-    for (int d = 0; d < annmb.dim; ++d) {
-      g_Fp[d * nlocal + atomi] = Fp[d] * Q_SCALER[d];
+  }
+}
+
+static __global__ void apply_ann_derivative(
+  NEPKK::ANN annmb,
+  const int N,
+  const int nlocal,
+  const int* __restrict__ g_ilist,
+  const int* __restrict__ g_type,
+  const NEP_FLOAT* __restrict__ g_ann_alpha,
+  NEP_FLOAT* g_Fp)
+{
+  const int atoms_per_block = 8;
+  extern __shared__ NEP_FLOAT s_alpha[];
+  const int atom_begin = blockIdx.x * atoms_per_block;
+  const int alpha_tile_size = annmb.num_neurons1 * atoms_per_block;
+  for (int index = threadIdx.x; index < alpha_tile_size; index += blockDim.x) {
+    const int atom_offset = index % atoms_per_block;
+    const int n = index / atoms_per_block;
+    const int n1 = atom_begin + atom_offset;
+    s_alpha[index] = n1 < N ? g_ann_alpha[n * N + n1] : FLOAT_LIT(0.0);
+  }
+  __syncthreads();
+
+  const int derivative_tile_size = annmb.dim * atoms_per_block;
+  for (int index = threadIdx.x; index < derivative_tile_size; index += blockDim.x) {
+    const int atom_offset = index % atoms_per_block;
+    const int d = index / atoms_per_block;
+    const int n1 = atom_begin + atom_offset;
+    if (n1 < N) {
+      const int atomi = g_ilist[n1];
+      const int nep_t1 = g_type[atomi];
+      const NEP_FLOAT* w0 = annmb.w0[nep_t1];
+      NEP_FLOAT derivative = FLOAT_LIT(0.0);
+      for (int n = 0; n < annmb.num_neurons1; ++n) {
+        derivative += s_alpha[n * atoms_per_block + atom_offset] *
+          w0[n * annmb.dim + d];
+      }
+      g_Fp[d * nlocal + atomi] = derivative * Q_SCALER[d];
     }
   }
 }

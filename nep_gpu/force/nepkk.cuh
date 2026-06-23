@@ -49,6 +49,7 @@ struct NEPKK_Data {
   GPU_Vector<NEP_FLOAT> f12y; // 3-body or manybody partial forces
   GPU_Vector<NEP_FLOAT> f12z; // 3-body or manybody partial forces
   GPU_Vector<NEP_FLOAT> Fp;
+  GPU_Vector<NEP_FLOAT> ann_alpha;
   GPU_Vector<NEP_FLOAT> sum_fxyz;
   GPU_Vector<int> NN_radial;    // radial neighbor list
   GPU_Vector<int> NL_radial;    // radial neighbor list

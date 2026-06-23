@@ -475,6 +475,7 @@ int NEPKK::calculateMaxAtoms(int MN_radial, int MN_angular, int lmp_num_neigh, i
     memory_per_atom += SIZE_DOUBLE;  // nep_potential_per_atom
     
     memory_per_atom += ANNNB_DIM * SIZE_FLOAT;  // nep_Fp
+    memory_per_atom += annmb.num_neurons1 * SIZE_FLOAT;  // nep_ann_alpha
     memory_per_atom += (4 + 1) * NUM_OF_ABC * SIZE_FLOAT;  // nep_sum_fxyz
     
     // 考虑max_nall = 1.2 * max_nlocal
@@ -557,6 +558,8 @@ void NEPKK::reset_nep_data(int inum, int nlocal, int nall, int vflag_either) {
     nep_data.potential_per_atom.resize(max_nlocal);
     
     nep_data.Fp.resize(max_nlocal * annmb.dim);//复用，存储特征值，之后存储能量对特征值导数 dUi/dfeature
+    nep_data.ann_alpha.resize(
+      static_cast<size_t>(max_nlocal) * annmb.num_neurons1);
     nep_data.sum_fxyz.resize(max_nlocal * (paramb.n_max_angular + 1) * NUM_OF_ABC); //保存三体feature Snlm^i，用于反向求导
 
     // nep_data.NN_radial.resize(max_nlocal, 0);
@@ -884,7 +887,7 @@ void NEPKK::compute(
     CUDA_CHECK_KERNEL
   }
 
-  apply_ann<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>(
+  apply_ann_forward<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>(
     paramb,
     annmb,
     inum,
@@ -892,7 +895,25 @@ void NEPKK::compute(
     ilist,
     lmp_data.type.data(),
     nep_data.Fp.data(),
-    nep_data.potential_per_atom.data());
+    nep_data.potential_per_atom.data(),
+    nep_data.ann_alpha.data());
+  CUDA_CHECK_KERNEL
+
+  const int ann_atoms_per_block = 8;
+  const int ann_derivative_threads = 256;
+  const size_t ann_alpha_smem = static_cast<size_t>(annmb.num_neurons1) *
+    ann_atoms_per_block * sizeof(NEP_FLOAT);
+  apply_ann_derivative<<<
+    (inum + ann_atoms_per_block - 1) / ann_atoms_per_block,
+    ann_derivative_threads,
+    ann_alpha_smem>>>(
+      annmb,
+      inum,
+      nlocal,
+      ilist,
+      lmp_data.type.data(),
+      nep_data.ann_alpha.data(),
+      nep_data.Fp.data());
   CUDA_CHECK_KERNEL
 
   size_t smem_bytes = 3 * sizeof(NEP_FLOAT) * BLOCK_SIZE64;  // 力分量 fx,fy,fz
