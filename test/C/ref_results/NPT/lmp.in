@@ -1,0 +1,46 @@
+variable        NSTEPS          equal 100
+variable        THERMO_FREQ     equal 1
+variable        DUMP_FREQ       equal 1
+variable        restart         equal 0
+variable        TEMP            equal 300.000000
+variable        PRESS           equal 0.000000
+variable        TAU_T           equal 0.100000
+variable        TAU_P           equal 1.000000
+
+units           metal
+boundary        p p p
+atom_style      atomic
+
+neighbor        1.0 bin
+neigh_modify    delay 10
+
+if "${restart} > 0" then "read_restart lmps.restart.*" else "read_data ../../conf.lmp"
+
+mass   1     12.0096
+pair_style   nep 
+pair_coeff       * * ../../nep.txt C
+
+replicate    5  6  1
+
+compute    allPe   all   pe
+compute    myVirial all pressure NULL virial
+variable   N_total equal count(all)
+variable   pe_peratom equal c_allPe/v_N_total
+variable   W_xx  equal c_myVirial[1]/v_N_total
+variable   W_yy  equal c_myVirial[2]/v_N_total
+variable   W_zz  equal c_myVirial[3]/v_N_total
+variable   W_xy  equal c_myVirial[4]/v_N_total
+variable   W_xz  equal c_myVirial[5]/v_N_total
+variable   W_yz  equal c_myVirial[6]/v_N_total
+
+thermo_style    custom step temp v_pe_peratom v_W_xx v_W_yy v_W_zz v_W_xy v_W_xz v_W_yz
+thermo          ${THERMO_FREQ}
+
+if "${restart} == 0" then "velocity        all create ${TEMP} 35826"
+fix             1 all npt temp ${TEMP} ${TEMP} ${TAU_T} x ${PRESS} ${PRESS} ${TAU_P}  y ${PRESS} ${PRESS} ${TAU_P}
+timestep        0.001000
+#run             ${NSTEPS} 
+dump            1 all custom ${DUMP_FREQ} lammps.dump id type x y z fx fy fz vx vy vz
+dump_modify     1 sort id
+
+run             ${NSTEPS}

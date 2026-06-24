@@ -1,0 +1,51 @@
+variable        NSTEPS          equal 100
+variable        THERMO_FREQ     equal 1
+variable        DUMP_FREQ       equal 1
+variable        restart         equal 0
+variable        TEMP            equal 300.000000
+variable        PRESS           equal 0.000000
+variable        TAU_T           equal 0.050000
+variable        TAU_P           equal 0.500000
+
+# --- Kokkos Settings ---
+package kokkos neigh half comm device
+newton on
+
+units           metal
+boundary        p p p
+atom_style      atomic
+
+neighbor        1.0 bin
+neigh_modify    delay 10
+
+lattice bcc 3.165
+region box block 0 6 0 6 0 6  
+create_box 1 box
+create_atoms 1 box
+
+mass   1    183.84
+pair_style   matpl/nep/kk  ../../nep.txt
+pair_coeff       * * W
+
+compute    allPe   all   pe
+compute    myVirial all pressure NULL virial
+variable   N_total equal count(all)
+variable   pe_peratom equal c_allPe/v_N_total
+variable   W_xx  equal c_myVirial[1]/v_N_total
+variable   W_yy  equal c_myVirial[2]/v_N_total
+variable   W_zz  equal c_myVirial[3]/v_N_total
+variable   W_xy  equal c_myVirial[4]/v_N_total
+variable   W_xz  equal c_myVirial[5]/v_N_total
+variable   W_yz  equal c_myVirial[6]/v_N_total
+
+thermo_style    custom step temp v_pe_peratom v_W_xx v_W_yy v_W_zz v_W_xy v_W_xz v_W_yz
+thermo          ${THERMO_FREQ}
+
+if "${restart} == 0" then "velocity        all create ${TEMP} 35826"
+fix             1 all nvt/kk temp ${TEMP} ${TEMP} ${TAU_T} #iso ${PRESS} ${PRESS} ${TAU_P}
+timestep        0.001000
+#run             ${NSTEPS} 
+dump            1 all custom ${DUMP_FREQ} lammps.dump id type x y z fx fy fz vx vy vz
+dump_modify     1 sort id
+
+rerun           ../../ref_results/NVT/lammps.dump  dump x y z  vx vy vz
