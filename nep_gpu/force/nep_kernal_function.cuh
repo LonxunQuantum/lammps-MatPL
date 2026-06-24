@@ -106,16 +106,45 @@ static __global__ void calc_2b_descriptor_sharemem(
       // 2b->qn
       NEP_FLOAT fc12;
       find_fc(paramb.rc_radial, paramb.rcinv_radial, d12, fc12);
-      NEP_FLOAT fn12[MAX_NUM_N];//n_base
+      NEP_FLOAT gn12[MAX_NUM_N];
+#pragma unroll
+      for (int n = 0; n < MAX_NUM_N; ++n) {
+        gn12[n] = FLOAT_LIT(0.0);
+      }
 
-      find_fn(paramb.basis_size_radial, paramb.rcinv_radial, d12, fc12, fn12);
-      for (int n = 0; n < paramb.n_max_radial_plus1; ++n) {
-        NEP_FLOAT gn12 = FLOAT_LIT(0.0);
-        for (int k = 0; k < paramb.basis_size_radial_plus1; ++k) {
-          gn12 += fn12[k] * s_c[c_idx_I + n * paramb.basis_size_radial_plus1 + k];
+      const NEP_FLOAT radial_x =
+        FLOAT_LIT(2.0) * (d12 * paramb.rcinv_radial - FLOAT_LIT(1.0)) *
+        (d12 * paramb.rcinv_radial - FLOAT_LIT(1.0)) - FLOAT_LIT(1.0);
+      const NEP_FLOAT half_fc12 = FLOAT_LIT(0.5) * fc12;
+      NEP_FLOAT chebyshev_k_minus_2 = FLOAT_LIT(1.0);
+      NEP_FLOAT chebyshev_k_minus_1 = radial_x;
+      for (int k = 0; k < paramb.basis_size_radial_plus1; ++k) {
+        NEP_FLOAT fn12_k;
+        if (k == 0) {
+          fn12_k = fc12;
+        } else if (k == 1) {
+          fn12_k = (radial_x + FLOAT_LIT(1.0)) * half_fc12;
+        } else {
+          const NEP_FLOAT chebyshev_k =
+            FLOAT_LIT(2.0) * radial_x * chebyshev_k_minus_1 - chebyshev_k_minus_2;
+          chebyshev_k_minus_2 = chebyshev_k_minus_1;
+          chebyshev_k_minus_1 = chebyshev_k;
+          fn12_k = (chebyshev_k + FLOAT_LIT(1.0)) * half_fc12;
         }
-        g_Fp[n * nlocal + atomi] += gn12;
-      } // nmax
+#pragma unroll
+        for (int n = 0; n < MAX_NUM_N; ++n) {
+          if (n < paramb.n_max_radial_plus1) {
+            gn12[n] +=
+              fn12_k * s_c[c_idx_I + n * paramb.basis_size_radial_plus1 + k];
+          }
+        }
+      }
+#pragma unroll
+      for (int n = 0; n < MAX_NUM_N; ++n) {
+        if (n < paramb.n_max_radial_plus1) {
+          g_Fp[n * nlocal + atomi] += gn12[n];
+        }
+      }
     }// neigh
     // printf("i-%d-%d-feat-2b: %.15f %.15f %.15f %.15f %.15f \n", n1, atomi, \
     g_Fp[q_idx_start], g_Fp[q_idx_start+1], g_Fp[q_idx_start+2], g_Fp[q_idx_start+3], g_Fp[q_idx_start+4]);
