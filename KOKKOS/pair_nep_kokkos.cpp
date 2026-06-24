@@ -29,6 +29,8 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 #include <cuda_runtime.h>
 
 using namespace LAMMPS_NS;
@@ -337,6 +339,22 @@ void PairNEPKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
   nlocal = atom->nlocal;
   nall = atom->nlocal + atom->nghost;
   inum = list->inum;
+
+  for (const auto &model : nep_gpu_models) {
+    if (nlocal > model.max_nlocal) {
+      const std::int64_t radial_neighbor_count =
+        static_cast<std::int64_t>(nlocal) *
+        static_cast<std::int64_t>(model.paramb.MN_radial);
+      if (radial_neighbor_count > std::numeric_limits<int>::max()) {
+        error->one(
+          FLERR,
+          "The atom count on a single GPU is too large (current local atom count: {}) and "
+          "exceeds the supported memory capacity. Reduce the number of atoms per GPU or use "
+          "MatPL-pro.",
+          nlocal);
+      }
+    }
+  }
 
   // printf("DEBUG rank=%d device_id=%d step=%d eflag=%d, vflag=%d, vflag_fdotr=%d eflag_atom=%d, vflag_atom=%d cvflag_atom=%d vflag_global=%d vflag_either %d centroidstressflag=%d atom->nmax %d maxeatom %d->%d maxvatom %d->%d maxcvatom %d->%d nlocal %d inum %d nall %d neighbor->includegroup %d no_virial_fdotr_compute %d lmp->kokkos->neighflag %d \n", \
         rank, device_id, ntimestep, eflag, vflag, vflag_fdotr, eflag_atom, vflag_atom, cvflag_atom, vflag_global, vflag_either, centroidstressflag, atom->nmax, maxeatom, local_maxeatom, maxvatom, local_maxvatom, maxcvatom, local_maxcvatom, nlocal, inum, nall, neighbor->includegroup, no_virial_fdotr_compute, lmp->kokkos->neighflag);
