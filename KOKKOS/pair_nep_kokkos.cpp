@@ -239,8 +239,8 @@ void PairNEPKokkos<DeviceType>::init_style()
   request->set_kokkos_device(std::is_same<DeviceType,LMPDeviceType>::value);
 
   if (is_rank_0) printf("======== in init_style: neighflag = %d =========\n", neighflag);
-  // if (force->newton_pair == 0)
-  //   error->all(FLERR,"Pair style matpl/nep/kk requires newton pair on");
+  if (force->newton_pair == 0)
+    error->all(FLERR, "Pair style matpl/nep/kk requires newton pair on");
   newton_pair = force->newton_pair;
   // printf("===== DEBUG: newton_pair = %d =====\n", newton_pair);
 }

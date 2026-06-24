@@ -1529,7 +1529,8 @@ static __global__ void backward_force_ZBL(
     NEP_FLOAT z1 = g_pos[atomi*3+2];
     int type1 = g_type[atomi];
     int zi = g_atomic_numbers[type1];
-    NEP_FLOAT pow_zi = pow(zi, FLOAT_LIT(0.23));
+    NEP_FLOAT zi_fp = static_cast<NEP_FLOAT>(zi);
+    NEP_FLOAT pow_zi = pow(zi_fp, FLOAT_LIT(0.23));
     for (int i1 = 0; i1 < g_NN[atomi]; ++i1) {
       int n2 = g_NL[atomi + nlocal * i1];
       int type2 = g_type[n2];
@@ -1538,7 +1539,8 @@ static __global__ void backward_force_ZBL(
       NEP_FLOAT d12inv = FLOAT_LIT(1.0) / d12;
       NEP_FLOAT f, fp;
       int zj = g_atomic_numbers[type2];
-      NEP_FLOAT a_inv = (pow_zi + pow(zj, FLOAT_LIT(0.23))) * FLOAT_LIT(2.134563);
+      NEP_FLOAT zj_fp = static_cast<NEP_FLOAT>(zj);
+      NEP_FLOAT a_inv = (pow_zi + pow(zj_fp, FLOAT_LIT(0.23))) * FLOAT_LIT(2.134563);
       NEP_FLOAT zizj = K_C_SP * zi * zj;
       if (zbl_flexibled) {
         int t1, t2;
