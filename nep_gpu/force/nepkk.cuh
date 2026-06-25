@@ -32,15 +32,53 @@ In the read_neptxt function for parsing NEP.txt is adapted from the GPUMD source
 #pragma once
 #include "../utilities/common.cuh"
 #include "../utilities/gpu_vector.cuh"
+#include <cufft.h>
 #include <tuple>
 #include <utility> // for std::move
 // #include <Kokkos_Core.hpp>
+
+using NEPKKAllreduceDouble = void (*)(const double* sendbuf, double* recvbuf, int count, void* context);
 
 
 struct LMP_Data  {
   GPU_Vector<int> type;
   GPU_Vector<int> ilist;
   GPU_Vector<NEP_FLOAT> position; // 将double坐标转换为float，读取会更快
+};
+
+struct NEPKK_Box {
+  double h[9];
+  double hi[9];
+};
+
+struct NEPKK_PPPM_Para {
+  int K0K1K2 = 0;
+  int K0K1 = 0;
+  int K[3] = {0, 0, 0};
+  int K_half[3] = {0, 0, 0};
+  NEP_FLOAT alpha = FLOAT_LIT(0.0);
+  NEP_FLOAT alpha_factor = FLOAT_LIT(0.0);
+  NEP_FLOAT two_pi_over_V = FLOAT_LIT(0.0);
+  NEP_FLOAT b[3][3];
+  NEP_FLOAT two_pi_over_K[3];
+};
+
+struct NEPKK_PPPM_Data {
+  NEPKK_PPPM_Para para;
+  GPU_Vector<NEP_FLOAT> kx;
+  GPU_Vector<NEP_FLOAT> ky;
+  GPU_Vector<NEP_FLOAT> kz;
+  GPU_Vector<NEP_FLOAT> G;
+  GPU_Vector<cufftComplex> mesh;
+  GPU_Vector<cufftComplex> mesh_G;
+  GPU_Vector<cufftComplex> mesh_x;
+  GPU_Vector<cufftComplex> mesh_y;
+  GPU_Vector<cufftComplex> mesh_z;
+  GPU_Vector<cufftComplex> mesh_virial;
+  cufftHandle plan = 0;
+  cufftHandle plan_virial = 0;
+  bool plan_initialized = false;
+  bool plan_virial_initialized = false;
 };
 
 struct NEPKK_Data {
@@ -62,6 +100,17 @@ struct NEPKK_Data {
   GPU_Vector<double> virial_per_atom;
   GPU_Vector<double> total_virial;
   GPU_Vector<double> partial_virial;
+  GPU_Vector<NEP_FLOAT> charge;
+  GPU_Vector<NEP_FLOAT> charge_derivative;
+  GPU_Vector<NEP_FLOAT> D_real;
+  GPU_Vector<NEP_FLOAT> bec;
+  GPU_Vector<int> num_kpoints;
+  GPU_Vector<NEP_FLOAT> kx;
+  GPU_Vector<NEP_FLOAT> ky;
+  GPU_Vector<NEP_FLOAT> kz;
+  GPU_Vector<NEP_FLOAT> G;
+  GPU_Vector<NEP_FLOAT> S_real;
+  GPU_Vector<NEP_FLOAT> S_imag;
 };
 
 class NEPKK
@@ -70,6 +119,7 @@ public:
   struct ParaMB {
     bool use_typewise_cutoff_zbl = false;
     NEP_FLOAT typewise_cutoff_zbl_factor = FLOAT_LIT(0.0);
+    int charge_mode = 0;
     int version = 4; // NEP version
     int model_type = 0; // 0=potential, 1=dipole, 2=polarizability, 3=temperature-dependent free energy
     NEP_FLOAT rc_radial = FLOAT_LIT(0.0);     // radial cutoff
@@ -94,6 +144,12 @@ public:
     int num_types_sq = 0;       // for nep3
     int num_c_radial = 0;       // for nep3
     int num_types = 0;
+    int num_kpoints_max = 50000;
+    NEP_FLOAT charge_alpha = FLOAT_LIT(0.0);
+    NEP_FLOAT charge_alpha_factor = FLOAT_LIT(0.0);
+    NEP_FLOAT pppm_mesh_spacing = FLOAT_LIT(1.0);
+    int pppm_mesh_mode = 0;
+    int pppm_mesh[3] = {0, 0, 0};
     NEP_FLOAT q_scaler[140];
   };
 
@@ -107,6 +163,7 @@ public:
     const NEP_FLOAT* w0[NUM_ELEMENTS]; // weight from the input layer to the hidden layer
     const NEP_FLOAT* b0[NUM_ELEMENTS]; // bias for the hidden layer
     const NEP_FLOAT* w1[NUM_ELEMENTS]; // weight from the hidden layer to the output layer
+    const NEP_FLOAT* sqrt_epsilon_inf;
     const NEP_FLOAT* b1;             // bias for the output layer
     NEP_FLOAT* c;
   };
@@ -136,6 +193,7 @@ public:
   ANN annmb;
   ZBL zbl;
   NEPKK_Data nep_data;
+  NEPKK_PPPM_Data pppm_data;
   LMP_Data lmp_data;
   std::vector<int> cpu_element_atomic_number_list;
   GPU_Vector<int> atom_type_map; // 用于结构和力场中的元素顺序不一致时做映射
@@ -147,6 +205,16 @@ public:
   void update_potential(NEP_FLOAT* parameters, ANN& ann);
   void reset_nep_data(int inum, int n_local, int n_all, int vflag_either);
   void free_nep_data();
+  bool has_charge_bec() const { return paramb.charge_mode == 2; }
+  void compute_bec(
+    int inum,
+    int nlocal,
+    int nall,
+    int num_neighbors,
+    const int* ilist,
+    const int* numneigh,
+    const int* firstneigh);
+  void copy_bec_to_host(NEP_FLOAT* host_bec, int nall);
   void checkMemoryUsage(int sgin=0);
 
   bool getGPUMemoryStats(size_t& total_memory, size_t& used_memory, size_t& free_memory);
@@ -174,6 +242,12 @@ public:
     double* force_per_atom_copy,
     double* virial_per_atom,
     double* cvirial_per_atom,
+    const double* box_h,
+    const char* kspace_method,
+    long long natoms_global,
+    int mpi_size,
+    NEPKKAllreduceDouble allreduce_double,
+    void* allreduce_context,
     double* h_etot_virial_global // len=7: etot + 6 virials
     );
 
