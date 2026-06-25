@@ -1,0 +1,543 @@
+LAMMPS 测试结果对比报告（含阈值判断）
+============================================================
+
+>>> 体系: HfO2  系综: NPT <<<
+  --- 直接运行 (direct) 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 3.000000e-05, mean_abs_diff = 9.306931e-06, rmse = 1.210515e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 1.000000e-06, mean_abs_diff = 1.108911e-07, rmse = 3.303164e-07
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 5.100000e-05, mean_abs_diff = 2.376228e-05, rmse = 2.722068e-05
+      v_W_yy       : max_abs_diff = 5.000000e-05, mean_abs_diff = 2.529614e-05, rmse = 2.867991e-05
+      v_W_zz       : max_abs_diff = 5.000000e-05, mean_abs_diff = 3.001762e-05, rmse = 3.309393e-05
+      v_W_xy       : max_abs_diff = 2.200000e-06, mean_abs_diff = 8.345545e-07, rmse = 1.057281e-06
+      v_W_xz       : max_abs_diff = 5.600000e-06, mean_abs_diff = 1.676356e-06, rmse = 2.156629e-06
+      v_W_yz       : max_abs_diff = 4.800000e-06, mean_abs_diff = 1.168911e-06, rmse = 1.505789e-06
+    [dump 受力差异]
+      fx : avg_max_abs = 7.316832e-06, max_max_abs = 1.000000e-05
+      fy : avg_max_abs = 6.871287e-06, max_max_abs = 1.000000e-05
+      fz : avg_max_abs = 6.702970e-06, max_max_abs = 1.000000e-05
+    [结论] PASS
+  --- rerun 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 3.300000e-04, mean_abs_diff = 1.040594e-04, rmse = 1.286680e-04
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 5.000000e-06, mean_abs_diff = 1.223762e-06, rmse = 1.647981e-06
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 8.120000e-03, mean_abs_diff = 2.401886e-03, rmse = 3.103960e-03
+      v_W_yy       : max_abs_diff = 9.433000e-03, mean_abs_diff = 2.348672e-03, rmse = 3.133731e-03
+      v_W_zz       : max_abs_diff = 7.610000e-03, mean_abs_diff = 2.600532e-03, rmse = 3.175656e-03
+      v_W_xy       : max_abs_diff = 9.100500e-03, mean_abs_diff = 2.888507e-03, rmse = 3.531014e-03
+      v_W_xz       : max_abs_diff = 1.089100e-02, mean_abs_diff = 3.141660e-03, rmse = 4.112237e-03
+      v_W_yz       : max_abs_diff = 1.623510e-02, mean_abs_diff = 3.508978e-03, rmse = 4.525049e-03
+    [dump 受力差异]
+      fx : avg_max_abs = 1.404804e-03, max_max_abs = 2.094000e-03
+      fy : avg_max_abs = 1.434347e-03, max_max_abs = 2.115000e-03
+      fz : avg_max_abs = 1.485836e-03, max_max_abs = 2.503600e-03
+    [结论] PASS
+
+>>> 体系: HfO2  系综: NVT <<<
+  --- 直接运行 (direct) 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 6.000000e-05, mean_abs_diff = 1.603960e-05, rmse = 2.238281e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 1.000000e-06, mean_abs_diff = 9.900990e-08, rmse = 3.146584e-07
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 7.000000e-05, mean_abs_diff = 5.788149e-05, rmse = 5.840545e-05
+      v_W_yy       : max_abs_diff = 7.000000e-05, mean_abs_diff = 5.421208e-05, rmse = 5.458876e-05
+      v_W_zz       : max_abs_diff = 7.000000e-05, mean_abs_diff = 5.181218e-05, rmse = 5.217334e-05
+      v_W_xy       : max_abs_diff = 6.000000e-06, mean_abs_diff = 1.497030e-06, rmse = 2.140280e-06
+      v_W_xz       : max_abs_diff = 1.000000e-05, mean_abs_diff = 2.651683e-06, rmse = 3.614093e-06
+      v_W_yz       : max_abs_diff = 5.700000e-06, mean_abs_diff = 1.495475e-06, rmse = 1.987739e-06
+    [dump 受力差异]
+      fx : avg_max_abs = 7.584158e-06, max_max_abs = 1.000000e-05
+      fy : avg_max_abs = 7.673267e-06, max_max_abs = 1.000000e-05
+      fz : avg_max_abs = 7.762376e-06, max_max_abs = 1.000000e-05
+    [结论] PASS
+  --- rerun 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 2.900000e-04, mean_abs_diff = 1.000000e-04, rmse = 1.258712e-04
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 4.000000e-06, mean_abs_diff = 1.277228e-06, rmse = 1.673912e-06
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 9.120000e-03, mean_abs_diff = 2.592667e-03, rmse = 3.379471e-03
+      v_W_yy       : max_abs_diff = 9.410000e-03, mean_abs_diff = 2.707986e-03, rmse = 3.468641e-03
+      v_W_zz       : max_abs_diff = 9.360000e-03, mean_abs_diff = 2.553732e-03, rmse = 3.316076e-03
+      v_W_xy       : max_abs_diff = 1.000290e-02, mean_abs_diff = 3.094020e-03, rmse = 3.814333e-03
+      v_W_xz       : max_abs_diff = 1.147890e-02, mean_abs_diff = 3.084447e-03, rmse = 3.922992e-03
+      v_W_yz       : max_abs_diff = 1.975600e-02, mean_abs_diff = 3.764224e-03, rmse = 4.769313e-03
+    [dump 受力差异]
+      fx : avg_max_abs = 1.494447e-03, max_max_abs = 2.220000e-03
+      fy : avg_max_abs = 1.548892e-03, max_max_abs = 2.906000e-03
+      fz : avg_max_abs = 1.545658e-03, max_max_abs = 2.250000e-03
+    [结论] PASS
+
+>>> 体系: water  系综: NPT <<<
+  --- 直接运行 (direct) 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 1.000000e-05, mean_abs_diff = 1.188119e-06, rmse = 3.446910e-06
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 8.000000e-09, mean_abs_diff = 6.950495e-09, rmse = 6.968103e-09
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 3.000000e-06, mean_abs_diff = 1.468119e-06, rmse = 1.810435e-06
+      v_W_yy       : max_abs_diff = 4.000000e-06, mean_abs_diff = 1.346535e-06, rmse = 1.685524e-06
+      v_W_zz       : max_abs_diff = 4.000000e-06, mean_abs_diff = 1.530802e-06, rmse = 1.857506e-06
+      v_W_xy       : max_abs_diff = 3.300000e-07, mean_abs_diff = 9.546535e-08, rmse = 1.245271e-07
+      v_W_xz       : max_abs_diff = 4.800000e-07, mean_abs_diff = 1.844257e-07, rmse = 2.169028e-07
+      v_W_yz       : max_abs_diff = 3.000000e-07, mean_abs_diff = 8.496040e-08, rmse = 1.185963e-07
+    [dump 受力差异]
+      fx : avg_max_abs = 4.475248e-06, max_max_abs = 1.000000e-05
+      fy : avg_max_abs = 4.475248e-06, max_max_abs = 1.000000e-05
+      fz : avg_max_abs = 4.297030e-06, max_max_abs = 1.000000e-05
+    [结论] PASS
+  --- rerun 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 7.000000e-05, mean_abs_diff = 2.396040e-05, rmse = 2.873574e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 3.231000e-06, mean_abs_diff = 7.714950e-07, rmse = 9.758212e-07
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 1.087500e-02, mean_abs_diff = 3.206539e-03, rmse = 4.142351e-03
+      v_W_yy       : max_abs_diff = 9.392000e-03, mean_abs_diff = 3.097519e-03, rmse = 3.978721e-03
+      v_W_zz       : max_abs_diff = 1.519600e-02, mean_abs_diff = 3.332587e-03, rmse = 4.275591e-03
+      v_W_xy       : max_abs_diff = 5.902900e-03, mean_abs_diff = 2.003128e-03, rmse = 2.419694e-03
+      v_W_xz       : max_abs_diff = 7.975200e-03, mean_abs_diff = 2.243640e-03, rmse = 2.812948e-03
+      v_W_yz       : max_abs_diff = 6.112730e-03, mean_abs_diff = 2.122815e-03, rmse = 2.647478e-03
+    [dump 受力差异]
+      fx : avg_max_abs = 4.318001e-03, max_max_abs = 6.540000e-03
+      fy : avg_max_abs = 4.377066e-03, max_max_abs = 6.803000e-03
+      fz : avg_max_abs = 4.440351e-03, max_max_abs = 6.563000e-03
+    [结论] PASS
+
+>>> 体系: water  系综: NVT <<<
+  --- 直接运行 (direct) 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 1.000000e-05, mean_abs_diff = 8.910891e-07, rmse = 2.985112e-06
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 8.000000e-09, mean_abs_diff = 7.000000e-09, rmse = 7.016953e-09
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 3.000000e-06, mean_abs_diff = 1.563267e-06, rmse = 1.899656e-06
+      v_W_yy       : max_abs_diff = 4.000000e-06, mean_abs_diff = 1.444653e-06, rmse = 1.796961e-06
+      v_W_zz       : max_abs_diff = 4.000000e-06, mean_abs_diff = 1.551525e-06, rmse = 1.893249e-06
+      v_W_xy       : max_abs_diff = 4.000000e-07, mean_abs_diff = 1.002119e-07, rmse = 1.308995e-07
+      v_W_xz       : max_abs_diff = 5.000000e-07, mean_abs_diff = 1.948515e-07, rmse = 2.286638e-07
+      v_W_yz       : max_abs_diff = 4.000000e-07, mean_abs_diff = 8.645347e-08, rmse = 1.226887e-07
+    [dump 受力差异]
+      fx : avg_max_abs = 4.297030e-06, max_max_abs = 1.000000e-05
+      fy : avg_max_abs = 4.742574e-06, max_max_abs = 1.000000e-05
+      fz : avg_max_abs = 4.386139e-06, max_max_abs = 1.000000e-05
+    [结论] PASS
+  --- rerun 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 6.000000e-05, mean_abs_diff = 2.009901e-05, rmse = 2.515300e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 3.130000e-06, mean_abs_diff = 7.020891e-07, rmse = 9.684904e-07
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 1.275800e-02, mean_abs_diff = 2.680280e-03, rmse = 3.689326e-03
+      v_W_yy       : max_abs_diff = 9.766000e-03, mean_abs_diff = 3.370345e-03, rmse = 4.177065e-03
+      v_W_zz       : max_abs_diff = 1.349300e-02, mean_abs_diff = 3.858797e-03, rmse = 4.788683e-03
+      v_W_xy       : max_abs_diff = 7.398500e-03, mean_abs_diff = 2.154735e-03, rmse = 2.706806e-03
+      v_W_xz       : max_abs_diff = 6.008300e-03, mean_abs_diff = 2.155774e-03, rmse = 2.596647e-03
+      v_W_yz       : max_abs_diff = 6.064900e-03, mean_abs_diff = 1.926702e-03, rmse = 2.441763e-03
+    [dump 受力差异]
+      fx : avg_max_abs = 4.419791e-03, max_max_abs = 5.930000e-03
+      fy : avg_max_abs = 4.335924e-03, max_max_abs = 6.746000e-03
+      fz : avg_max_abs = 4.515709e-03, max_max_abs = 6.630000e-03
+    [结论] PASS
+
+>>> 体系: C  系综: NPT <<<
+  --- 直接运行 (direct) 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 4.000000e-05, mean_abs_diff = 1.316832e-05, rmse = 1.691563e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 1.000000e-07, mean_abs_diff = 3.366337e-08, rmse = 5.802014e-08
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 8.700000e-06, mean_abs_diff = 5.320485e-06, rmse = 5.952947e-06
+      v_W_yy       : max_abs_diff = 8.500000e-06, mean_abs_diff = 5.300602e-06, rmse = 5.950255e-06
+      v_W_zz       : max_abs_diff = 3.000000e-06, mean_abs_diff = 1.701980e-06, rmse = 1.828244e-06
+      v_W_xy       : max_abs_diff = 6.200000e-07, mean_abs_diff = 2.245941e-07, rmse = 2.799604e-07
+      v_W_xz       : max_abs_diff = 9.100000e-08, mean_abs_diff = 3.061683e-08, rmse = 3.927953e-08
+      v_W_yz       : max_abs_diff = 1.000000e-07, mean_abs_diff = 2.276337e-08, rmse = 3.300880e-08
+    [dump 受力差异]
+      fx : avg_max_abs = 7.405941e-06, max_max_abs = 1.000000e-05
+      fy : avg_max_abs = 7.663465e-06, max_max_abs = 1.000000e-05
+      fz : avg_max_abs = 1.426733e-06, max_max_abs = 1.000000e-05
+    [结论] PASS
+  --- rerun 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 7.000000e-05, mean_abs_diff = 1.564356e-05, rmse = 2.175471e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 3.100000e-06, mean_abs_diff = 1.180198e-06, rmse = 1.408883e-06
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 3.567870e-03, mean_abs_diff = 1.018226e-03, rmse = 1.246781e-03
+      v_W_yy       : max_abs_diff = 3.298724e-03, mean_abs_diff = 1.033391e-03, rmse = 1.286842e-03
+      v_W_zz       : max_abs_diff = 3.659000e-04, mean_abs_diff = 1.092218e-04, rmse = 1.361321e-04
+      v_W_xy       : max_abs_diff = 2.309090e-03, mean_abs_diff = 8.816361e-04, rmse = 1.076692e-03
+      v_W_xz       : max_abs_diff = 6.789600e-04, mean_abs_diff = 1.823308e-04, rmse = 2.319226e-04
+      v_W_yz       : max_abs_diff = 7.723000e-04, mean_abs_diff = 1.992237e-04, rmse = 2.407504e-04
+    [dump 受力差异]
+      fx : avg_max_abs = 4.805948e-03, max_max_abs = 5.879000e-03
+      fy : avg_max_abs = 4.868084e-03, max_max_abs = 6.270000e-03
+      fz : avg_max_abs = 1.320867e-03, max_max_abs = 1.610000e-03
+    [结论] PASS
+
+>>> 体系: C  系综: NVT <<<
+  --- 直接运行 (direct) 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 4.000000e-05, mean_abs_diff = 1.346535e-05, rmse = 1.740604e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 1.000000e-07, mean_abs_diff = 2.673267e-08, rmse = 5.170365e-08
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 9.000000e-06, mean_abs_diff = 8.329505e-06, rmse = 8.341064e-06
+      v_W_yy       : max_abs_diff = 9.100000e-06, mean_abs_diff = 8.344396e-06, rmse = 8.356789e-06
+      v_W_zz       : max_abs_diff = 3.000000e-06, mean_abs_diff = 1.682178e-06, rmse = 1.833327e-06
+      v_W_xy       : max_abs_diff = 8.800000e-07, mean_abs_diff = 2.940495e-07, rmse = 3.764810e-07
+      v_W_xz       : max_abs_diff = 1.400000e-07, mean_abs_diff = 4.045850e-08, rmse = 5.348073e-08
+      v_W_yz       : max_abs_diff = 1.220000e-07, mean_abs_diff = 2.764356e-08, rmse = 3.975582e-08
+    [dump 受力差异]
+      fx : avg_max_abs = 8.466337e-06, max_max_abs = 1.000000e-05
+      fy : avg_max_abs = 8.644554e-06, max_max_abs = 1.000000e-05
+      fz : avg_max_abs = 1.257426e-06, max_max_abs = 1.000000e-05
+    [结论] PASS
+  --- rerun 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 7.000000e-05, mean_abs_diff = 1.673267e-05, rmse = 2.284255e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 3.000000e-06, mean_abs_diff = 9.742574e-07, rmse = 1.212150e-06
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 2.961100e-03, mean_abs_diff = 9.289603e-04, rmse = 1.161491e-03
+      v_W_yy       : max_abs_diff = 2.858400e-03, mean_abs_diff = 8.871383e-04, rmse = 1.088933e-03
+      v_W_zz       : max_abs_diff = 3.800000e-04, mean_abs_diff = 1.009723e-04, rmse = 1.228916e-04
+      v_W_xy       : max_abs_diff = 2.586300e-03, mean_abs_diff = 7.410338e-04, rmse = 9.861969e-04
+      v_W_xz       : max_abs_diff = 5.698520e-04, mean_abs_diff = 1.714098e-04, rmse = 2.204527e-04
+      v_W_yz       : max_abs_diff = 9.016830e-04, mean_abs_diff = 1.845495e-04, rmse = 2.422698e-04
+    [dump 受力差异]
+      fx : avg_max_abs = 4.787811e-03, max_max_abs = 6.230000e-03
+      fy : avg_max_abs = 4.765541e-03, max_max_abs = 5.910000e-03
+      fz : avg_max_abs = 1.322456e-03, max_max_abs = 1.635000e-03
+    [结论] PASS
+
+>>> 体系: Cu  系综: NPT <<<
+  --- 直接运行 (direct) 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 2.000000e-05, mean_abs_diff = 5.485149e-06, rmse = 8.346458e-06
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 1.000000e-07, mean_abs_diff = 1.584158e-08, rmse = 3.980149e-08
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 6.500000e-05, mean_abs_diff = 2.722307e-05, rmse = 3.163978e-05
+      v_W_yy       : max_abs_diff = 6.500000e-05, mean_abs_diff = 2.724634e-05, rmse = 3.165792e-05
+      v_W_zz       : max_abs_diff = 6.500000e-05, mean_abs_diff = 2.717703e-05, rmse = 3.158621e-05
+      v_W_xy       : max_abs_diff = 2.000000e-07, mean_abs_diff = 9.007030e-08, rmse = 1.113704e-07
+      v_W_xz       : max_abs_diff = 1.100000e-07, mean_abs_diff = 5.144861e-08, rmse = 6.784578e-08
+      v_W_yz       : max_abs_diff = 2.000000e-07, mean_abs_diff = 6.576337e-08, rmse = 8.236612e-08
+    [dump 受力差异]
+      fx : avg_max_abs = 9.188119e-07, max_max_abs = 1.000000e-06
+      fy : avg_max_abs = 9.188119e-07, max_max_abs = 1.000000e-06
+      fz : avg_max_abs = 9.277228e-07, max_max_abs = 1.000000e-06
+    [结论] PASS
+  --- rerun 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 4.000000e-05, mean_abs_diff = 1.178218e-05, rmse = 1.529835e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 1.200000e-06, mean_abs_diff = 3.227723e-07, rmse = 4.164917e-07
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 1.190000e-03, mean_abs_diff = 3.531389e-04, rmse = 4.504761e-04
+      v_W_yy       : max_abs_diff = 1.210000e-03, mean_abs_diff = 3.456556e-04, rmse = 4.378584e-04
+      v_W_zz       : max_abs_diff = 1.286000e-03, mean_abs_diff = 3.013731e-04, rmse = 3.954188e-04
+      v_W_xy       : max_abs_diff = 8.676000e-04, mean_abs_diff = 2.406393e-04, rmse = 3.151161e-04
+      v_W_xz       : max_abs_diff = 8.629000e-04, mean_abs_diff = 2.315911e-04, rmse = 2.979344e-04
+      v_W_yz       : max_abs_diff = 9.791000e-04, mean_abs_diff = 2.283749e-04, rmse = 3.077531e-04
+    [dump 受力差异]
+      fx : avg_max_abs = 5.179049e-04, max_max_abs = 6.790000e-04
+      fy : avg_max_abs = 5.150667e-04, max_max_abs = 7.100000e-04
+      fz : avg_max_abs = 5.216161e-04, max_max_abs = 7.698000e-04
+    [结论] PASS
+
+>>> 体系: Cu  系综: NVT <<<
+  --- 直接运行 (direct) 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 1.000000e-05, mean_abs_diff = 4.207921e-06, rmse = 6.081135e-06
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 1.000000e-07, mean_abs_diff = 9.900990e-09, rmse = 3.146584e-08
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 6.600000e-05, mean_abs_diff = 6.472277e-05, rmse = 6.472463e-05
+      v_W_yy       : max_abs_diff = 6.600000e-05, mean_abs_diff = 6.477228e-05, rmse = 6.477516e-05
+      v_W_zz       : max_abs_diff = 6.600000e-05, mean_abs_diff = 6.471287e-05, rmse = 6.471537e-05
+      v_W_xy       : max_abs_diff = 2.000000e-07, mean_abs_diff = 5.548348e-08, rmse = 7.756411e-08
+      v_W_xz       : max_abs_diff = 1.900000e-07, mean_abs_diff = 6.469713e-08, rmse = 9.050365e-08
+      v_W_yz       : max_abs_diff = 1.200000e-07, mean_abs_diff = 4.171386e-08, rmse = 6.126577e-08
+    [dump 受力差异]
+      fx : avg_max_abs = 9.455446e-07, max_max_abs = 1.000000e-06
+      fy : avg_max_abs = 9.544554e-07, max_max_abs = 1.000000e-06
+      fz : avg_max_abs = 9.366337e-07, max_max_abs = 1.000000e-06
+    [结论] PASS
+  --- rerun 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 5.000000e-05, mean_abs_diff = 1.317822e-05, rmse = 1.739438e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 1.200000e-06, mean_abs_diff = 2.772277e-07, rmse = 3.626088e-07
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 9.960000e-04, mean_abs_diff = 2.772079e-04, rmse = 3.648822e-04
+      v_W_yy       : max_abs_diff = 1.359000e-03, mean_abs_diff = 3.463564e-04, rmse = 4.415491e-04
+      v_W_zz       : max_abs_diff = 7.960000e-04, mean_abs_diff = 3.043861e-04, rmse = 3.680236e-04
+      v_W_xy       : max_abs_diff = 8.236000e-04, mean_abs_diff = 2.387164e-04, rmse = 3.004696e-04
+      v_W_xz       : max_abs_diff = 1.345500e-03, mean_abs_diff = 2.287823e-04, rmse = 3.178006e-04
+      v_W_yz       : max_abs_diff = 8.388000e-04, mean_abs_diff = 2.115817e-04, rmse = 2.758825e-04
+    [dump 受力差异]
+      fx : avg_max_abs = 5.606061e-04, max_max_abs = 8.900000e-04
+      fy : avg_max_abs = 5.577174e-04, max_max_abs = 7.890000e-04
+      fz : avg_max_abs = 5.582742e-04, max_max_abs = 7.490000e-04
+    [结论] PASS
+
+>>> 体系: W  系综: NPT <<<
+  --- 直接运行 (direct) 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 1.000000e-05, mean_abs_diff = 1.762376e-06, rmse = 3.712436e-06
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 1.000000e-06, mean_abs_diff = 6.930693e-08, rmse = 2.632621e-07
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 1.400000e-04, mean_abs_diff = 5.754386e-05, rmse = 6.981972e-05
+      v_W_yy       : max_abs_diff = 1.400000e-04, mean_abs_diff = 5.764059e-05, rmse = 6.985531e-05
+      v_W_zz       : max_abs_diff = 1.400000e-04, mean_abs_diff = 5.756436e-05, rmse = 6.974562e-05
+      v_W_xy       : max_abs_diff = 4.000000e-08, mean_abs_diff = 1.435852e-08, rmse = 1.964084e-08
+      v_W_xz       : max_abs_diff = 8.000000e-08, mean_abs_diff = 2.370604e-08, rmse = 3.345724e-08
+      v_W_yz       : max_abs_diff = 2.000000e-08, mean_abs_diff = 7.533961e-09, rmse = 9.971420e-09
+    [dump 受力差异]
+      fx : avg_max_abs = 1.727851e-06, max_max_abs = 1.000000e-05
+      fy : avg_max_abs = 1.373267e-06, max_max_abs = 1.000000e-05
+      fz : avg_max_abs = 1.132673e-06, max_max_abs = 1.000000e-05
+    [结论] PASS
+  --- rerun 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 8.000000e-05, mean_abs_diff = 1.939604e-05, rmse = 2.497940e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 3.000000e-06, mean_abs_diff = 5.346535e-07, rmse = 8.443171e-07
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 2.050000e-03, mean_abs_diff = 5.552058e-04, rmse = 7.339877e-04
+      v_W_yy       : max_abs_diff = 2.603000e-03, mean_abs_diff = 5.846320e-04, rmse = 7.708329e-04
+      v_W_zz       : max_abs_diff = 2.390000e-03, mean_abs_diff = 5.687550e-04, rmse = 7.910858e-04
+      v_W_xy       : max_abs_diff = 1.108800e-03, mean_abs_diff = 2.162191e-04, rmse = 3.183579e-04
+      v_W_xz       : max_abs_diff = 9.677300e-04, mean_abs_diff = 2.104076e-04, rmse = 2.843433e-04
+      v_W_yz       : max_abs_diff = 9.685700e-04, mean_abs_diff = 2.406111e-04, rmse = 3.147815e-04
+    [dump 受力差异]
+      fx : avg_max_abs = 1.188932e-03, max_max_abs = 1.521000e-03
+      fy : avg_max_abs = 1.184723e-03, max_max_abs = 1.465000e-03
+      fz : avg_max_abs = 1.201196e-03, max_max_abs = 1.539000e-03
+    [结论] PASS
+
+>>> 体系: W  系综: NVT <<<
+  --- 直接运行 (direct) 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 2.000000e-05, mean_abs_diff = 4.910891e-06, rmse = 6.773565e-06
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 1.000000e-06, mean_abs_diff = 3.960396e-08, rmse = 1.990074e-07
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 1.400000e-04, mean_abs_diff = 1.350891e-04, rmse = 1.351104e-04
+      v_W_yy       : max_abs_diff = 1.400000e-04, mean_abs_diff = 1.349010e-04, rmse = 1.349227e-04
+      v_W_zz       : max_abs_diff = 1.400000e-04, mean_abs_diff = 1.347030e-04, rmse = 1.347247e-04
+      v_W_xy       : max_abs_diff = 9.000000e-08, mean_abs_diff = 2.400208e-08, rmse = 3.822005e-08
+      v_W_xz       : max_abs_diff = 9.000000e-08, mean_abs_diff = 3.725267e-08, rmse = 5.057297e-08
+      v_W_yz       : max_abs_diff = 8.000000e-08, mean_abs_diff = 2.862010e-08, rmse = 4.006231e-08
+    [dump 受力差异]
+      fx : avg_max_abs = 1.765347e-06, max_max_abs = 1.000000e-05
+      fy : avg_max_abs = 1.043564e-06, max_max_abs = 1.000000e-05
+      fz : avg_max_abs = 1.400000e-06, max_max_abs = 1.000000e-05
+    [结论] PASS
+  --- rerun 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 7.000000e-05, mean_abs_diff = 1.690099e-05, rmse = 2.260356e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 3.000000e-06, mean_abs_diff = 6.039604e-07, rmse = 9.065220e-07
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 2.403000e-03, mean_abs_diff = 5.597822e-04, rmse = 7.552914e-04
+      v_W_yy       : max_abs_diff = 2.617000e-03, mean_abs_diff = 5.368614e-04, rmse = 7.499409e-04
+      v_W_zz       : max_abs_diff = 2.505000e-03, mean_abs_diff = 5.676139e-04, rmse = 7.549644e-04
+      v_W_xy       : max_abs_diff = 6.834500e-04, mean_abs_diff = 2.036192e-04, rmse = 2.714240e-04
+      v_W_xz       : max_abs_diff = 6.817400e-04, mean_abs_diff = 1.837141e-04, rmse = 2.343198e-04
+      v_W_yz       : max_abs_diff = 7.792200e-04, mean_abs_diff = 2.196618e-04, rmse = 2.833681e-04
+    [dump 受力差异]
+      fx : avg_max_abs = 1.118083e-03, max_max_abs = 1.539000e-03
+      fy : avg_max_abs = 1.120061e-03, max_max_abs = 1.389000e-03
+      fz : avg_max_abs = 1.117111e-03, max_max_abs = 1.487000e-03
+    [结论] PASS
+
+>>> 体系: WMoTaV  系综: NPT <<<
+  --- 直接运行 (direct) 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 2.000000e-05, mean_abs_diff = 5.445545e-06, rmse = 8.265400e-06
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 0.000000e+00, mean_abs_diff = 0.000000e+00, rmse = 0.000000e+00
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 1.600000e-04, mean_abs_diff = 9.310495e-05, rmse = 1.063346e-04
+      v_W_yy       : max_abs_diff = 1.600000e-04, mean_abs_diff = 9.298178e-05, rmse = 1.061803e-04
+      v_W_zz       : max_abs_diff = 1.600000e-04, mean_abs_diff = 9.262010e-05, rmse = 1.058030e-04
+      v_W_xy       : max_abs_diff = 3.400000e-07, mean_abs_diff = 2.109020e-07, rmse = 2.401190e-07
+      v_W_xz       : max_abs_diff = 8.000000e-07, mean_abs_diff = 5.325980e-07, rmse = 5.622740e-07
+      v_W_yz       : max_abs_diff = 3.000000e-07, mean_abs_diff = 1.439277e-07, rmse = 1.720117e-07
+    [dump 受力差异]
+      fx : avg_max_abs = 1.436634e-06, max_max_abs = 1.000000e-05
+      fy : avg_max_abs = 1.784158e-06, max_max_abs = 1.000000e-05
+      fz : avg_max_abs = 1.347525e-06, max_max_abs = 1.000000e-05
+    [结论] PASS
+  --- rerun 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 1.000000e-04, mean_abs_diff = 2.594059e-05, rmse = 3.324080e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 3.000000e-06, mean_abs_diff = 7.326733e-07, rmse = 1.043604e-06
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 6.700000e-03, mean_abs_diff = 1.616071e-03, rmse = 2.087641e-03
+      v_W_yy       : max_abs_diff = 6.274000e-03, mean_abs_diff = 1.540250e-03, rmse = 2.035438e-03
+      v_W_zz       : max_abs_diff = 6.330000e-03, mean_abs_diff = 1.459059e-03, rmse = 1.895100e-03
+      v_W_xy       : max_abs_diff = 2.639100e-03, mean_abs_diff = 7.306816e-04, rmse = 9.047309e-04
+      v_W_xz       : max_abs_diff = 3.298300e-03, mean_abs_diff = 7.490621e-04, rmse = 9.592074e-04
+      v_W_yz       : max_abs_diff = 2.513300e-03, mean_abs_diff = 7.298712e-04, rmse = 9.337566e-04
+    [dump 受力差异]
+      fx : avg_max_abs = 9.329924e-04, max_max_abs = 1.307000e-03
+      fy : avg_max_abs = 9.660632e-04, max_max_abs = 1.480000e-03
+      fz : avg_max_abs = 9.434591e-04, max_max_abs = 1.357000e-03
+    [结论] PASS
+
+>>> 体系: WMoTaV  系综: NVT <<<
+  --- 直接运行 (direct) 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 1.000000e-05, mean_abs_diff = 3.465347e-06, rmse = 5.886719e-06
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 1.000000e-06, mean_abs_diff = 9.900990e-09, rmse = 9.950372e-08
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 1.600000e-04, mean_abs_diff = 1.549505e-04, rmse = 1.550311e-04
+      v_W_yy       : max_abs_diff = 1.600000e-04, mean_abs_diff = 1.563366e-04, rmse = 1.564109e-04
+      v_W_zz       : max_abs_diff = 1.600000e-04, mean_abs_diff = 1.559406e-04, rmse = 1.560179e-04
+      v_W_xy       : max_abs_diff = 3.000000e-07, mean_abs_diff = 1.691980e-07, rmse = 1.929202e-07
+      v_W_xz       : max_abs_diff = 3.607200e-07, mean_abs_diff = 2.912547e-07, rmse = 2.956289e-07
+      v_W_yz       : max_abs_diff = 3.000000e-07, mean_abs_diff = 8.310891e-08, rmse = 1.122435e-07
+    [dump 受力差异]
+      fx : avg_max_abs = 1.436634e-06, max_max_abs = 1.000000e-05
+      fy : avg_max_abs = 1.882178e-06, max_max_abs = 1.000000e-05
+      fz : avg_max_abs = 1.712871e-06, max_max_abs = 1.000000e-05
+    [结论] PASS
+  --- rerun 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 9.000000e-05, mean_abs_diff = 2.534653e-05, rmse = 3.211983e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 3.000000e-06, mean_abs_diff = 7.425743e-07, rmse = 1.029274e-06
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 7.390000e-03, mean_abs_diff = 1.474059e-03, rmse = 1.933774e-03
+      v_W_yy       : max_abs_diff = 5.550000e-03, mean_abs_diff = 1.402079e-03, rmse = 1.825808e-03
+      v_W_zz       : max_abs_diff = 5.300000e-03, mean_abs_diff = 1.296931e-03, rmse = 1.733755e-03
+      v_W_xy       : max_abs_diff = 2.037520e-03, mean_abs_diff = 5.975642e-04, rmse = 7.783242e-04
+      v_W_xz       : max_abs_diff = 2.589630e-03, mean_abs_diff = 6.046541e-04, rmse = 7.880583e-04
+      v_W_yz       : max_abs_diff = 2.158000e-03, mean_abs_diff = 7.433439e-04, rmse = 9.263962e-04
+    [dump 受力差异]
+      fx : avg_max_abs = 8.622845e-04, max_max_abs = 1.277000e-03
+      fy : avg_max_abs = 8.647914e-04, max_max_abs = 1.140000e-03
+      fz : avg_max_abs = 8.707856e-04, max_max_abs = 1.149000e-03
+    [结论] PASS
+
+>>> 体系: GaN_typewise_zbl  系综: NPT <<<
+  --- 直接运行 (direct) 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 3.000000e-05, mean_abs_diff = 8.118812e-06, rmse = 1.108027e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 1.000000e-07, mean_abs_diff = 3.960396e-09, rmse = 1.990074e-08
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 1.000000e-05, mean_abs_diff = 5.244030e-06, rmse = 6.103420e-06
+      v_W_yy       : max_abs_diff = 1.000000e-05, mean_abs_diff = 5.339109e-06, rmse = 6.128718e-06
+      v_W_zz       : max_abs_diff = 1.300000e-05, mean_abs_diff = 7.533663e-06, rmse = 8.782977e-06
+      v_W_xy       : max_abs_diff = 9.000000e-08, mean_abs_diff = 3.364356e-08, rmse = 4.490827e-08
+      v_W_xz       : max_abs_diff = 4.000000e-08, mean_abs_diff = 1.474257e-08, rmse = 1.816072e-08
+      v_W_yz       : max_abs_diff = 6.000000e-08, mean_abs_diff = 1.837624e-08, rmse = 2.306856e-08
+    [dump 受力差异]
+      fx : avg_max_abs = 8.386139e-06, max_max_abs = 1.000000e-05
+      fy : avg_max_abs = 7.851485e-06, max_max_abs = 1.000000e-05
+      fz : avg_max_abs = 8.653465e-06, max_max_abs = 1.000000e-05
+    [结论] PASS
+  --- rerun 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 1.200000e-04, mean_abs_diff = 3.188119e-05, rmse = 4.226273e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 2.800000e-06, mean_abs_diff = 6.821782e-07, rmse = 8.923770e-07
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 1.544000e-03, mean_abs_diff = 3.381509e-04, rmse = 4.338665e-04
+      v_W_yy       : max_abs_diff = 1.561000e-03, mean_abs_diff = 4.002437e-04, rmse = 5.113634e-04
+      v_W_zz       : max_abs_diff = 1.275000e-03, mean_abs_diff = 3.608376e-04, rmse = 4.547718e-04
+      v_W_xy       : max_abs_diff = 8.739900e-04, mean_abs_diff = 2.331224e-04, rmse = 2.951279e-04
+      v_W_xz       : max_abs_diff = 5.563700e-04, mean_abs_diff = 1.641947e-04, rmse = 2.100028e-04
+      v_W_yz       : max_abs_diff = 4.987700e-04, mean_abs_diff = 1.744561e-04, rmse = 2.149997e-04
+    [dump 受力差异]
+      fx : avg_max_abs = 1.872071e-03, max_max_abs = 2.960000e-03
+      fy : avg_max_abs = 1.853611e-03, max_max_abs = 2.500000e-03
+      fz : avg_max_abs = 1.865063e-03, max_max_abs = 2.330000e-03
+    [结论] PASS
+
+>>> 体系: GaN_typewise_zbl  系综: NVT <<<
+  --- 直接运行 (direct) 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 1.000000e-04, mean_abs_diff = 1.089109e-05, rmse = 1.610608e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 1.000000e-07, mean_abs_diff = 3.960396e-09, rmse = 1.990074e-08
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 1.010000e-05, mean_abs_diff = 9.626812e-06, rmse = 9.633778e-06
+      v_W_yy       : max_abs_diff = 1.030000e-05, mean_abs_diff = 9.633495e-06, rmse = 9.641083e-06
+      v_W_zz       : max_abs_diff = 1.500000e-05, mean_abs_diff = 1.282178e-05, rmse = 1.284292e-05
+      v_W_xy       : max_abs_diff = 1.120000e-07, mean_abs_diff = 3.651485e-08, rmse = 5.005660e-08
+      v_W_xz       : max_abs_diff = 9.000000e-08, mean_abs_diff = 2.214851e-08, rmse = 3.080038e-08
+      v_W_yz       : max_abs_diff = 6.000000e-08, mean_abs_diff = 2.450495e-08, rmse = 3.056384e-08
+    [dump 受力差异]
+      fx : avg_max_abs = 9.009901e-06, max_max_abs = 1.000000e-05
+      fy : avg_max_abs = 8.386139e-06, max_max_abs = 1.000000e-05
+      fz : avg_max_abs = 9.009901e-06, max_max_abs = 1.000000e-05
+    [结论] PASS
+  --- rerun 与基准对比 ---
+    [log 差异]
+    [温度]
+      Temp         : max_abs_diff = 1.000000e-04, mean_abs_diff = 3.316832e-05, rmse = 4.135095e-05
+    [每原子势能]
+      v_pe_peratom : max_abs_diff = 2.800000e-06, mean_abs_diff = 7.029703e-07, rmse = 9.412442e-07
+    [每原子维里张量]
+      v_W_xx       : max_abs_diff = 1.544000e-03, mean_abs_diff = 3.352552e-04, rmse = 4.343193e-04
+      v_W_yy       : max_abs_diff = 1.561000e-03, mean_abs_diff = 3.553240e-04, rmse = 4.475698e-04
+      v_W_zz       : max_abs_diff = 1.397000e-03, mean_abs_diff = 3.130000e-04, rmse = 4.158506e-04
+      v_W_xy       : max_abs_diff = 7.427400e-04, mean_abs_diff = 2.555774e-04, rmse = 3.095650e-04
+      v_W_xz       : max_abs_diff = 5.601400e-04, mean_abs_diff = 1.722486e-04, rmse = 2.142209e-04
+      v_W_yz       : max_abs_diff = 4.789700e-04, mean_abs_diff = 1.445658e-04, rmse = 1.810747e-04
+    [dump 受力差异]
+      fx : avg_max_abs = 1.866342e-03, max_max_abs = 3.120000e-03
+      fy : avg_max_abs = 1.885488e-03, max_max_abs = 2.910000e-03
+      fz : avg_max_abs = 1.879175e-03, max_max_abs = 2.370000e-03
+    [结论] PASS
+
+============================================================
+                    测 试 总 结
+============================================================
+直接运行对比: 总测试数 14, 通过 14, 失败 0
+Rerun 对比:    总测试数 14, 通过 14, 失败 0
+合计:           总测试数 28, 通过 28, 失败 0
+
+所有测试均通过阈值检查。

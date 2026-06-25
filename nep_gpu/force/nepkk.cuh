@@ -33,6 +33,7 @@ In the read_neptxt function for parsing NEP.txt is adapted from the GPUMD source
 #include "../utilities/common.cuh"
 #include "../utilities/gpu_vector.cuh"
 #include <cufft.h>
+#include <stdint.h>
 #include <tuple>
 #include <utility> // for std::move
 // #include <Kokkos_Core.hpp>
@@ -86,6 +87,7 @@ struct NEPKK_Data {
   GPU_Vector<NEP_FLOAT> f12y; // 3-body or manybody partial forces
   GPU_Vector<NEP_FLOAT> f12z; // 3-body or manybody partial forces
   GPU_Vector<NEP_FLOAT> Fp;
+  GPU_Vector<NEP_FLOAT> ann_alpha;
   GPU_Vector<NEP_FLOAT> sum_fxyz;
   GPU_Vector<int> NN_radial;    // radial neighbor list
   GPU_Vector<int> NL_radial;    // radial neighbor list
@@ -150,6 +152,8 @@ public:
     NEP_FLOAT pppm_mesh_spacing = FLOAT_LIT(1.0);
     int pppm_mesh_mode = 0;
     int pppm_mesh[3] = {0, 0, 0};
+    int sim_num_types = 0;
+    int8_t nep_to_sim[NUM_ELEMENTS];
     NEP_FLOAT q_scaler[140];
   };
 
@@ -258,4 +262,15 @@ public:
   int rank;
   int ff_index;
   double* cv_per_atom;
+
+private:
+  int sim_num_types_ = 0;
+  std::vector<int> sim_type_set_;
+  std::vector<int> configured_type_map_;
+  bool type_map_initialized_ = false;
+  bool slimmed_coeffs_ready_ = false;
+
+  void rebuild_slimmed_coeffs_();
 };
+
+static_assert(NUM_ELEMENTS <= 128, "int8_t NEP-to-simulation map is too small");

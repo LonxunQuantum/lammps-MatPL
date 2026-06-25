@@ -36,11 +36,13 @@ wuxingxing@pwmat.com and MatPL development team. 2026. Beijing Lonxun Quantum Co
 #include "ewald_nepkk.cuh"
 #include "pppm_nepkk.cuh"
 #include "nep_kernal_function.cuh"
+#include "nep_type_slim.h"
 #include "../utilities/common.cuh"
 #include "../utilities/error.cuh"
 #include "../utilities/nep_utilities.cuh"
 #include <fstream>
 #include <iostream>
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <cub/cub.cuh>
@@ -75,6 +77,7 @@ int countNonEmptyLines(const char* filename) {
 
 NEPKK::NEPKK()
 {
+  std::fill(paramb.nep_to_sim, paramb.nep_to_sim + NUM_ELEMENTS, static_cast<int8_t>(-1));
 }
 
 void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const int rank_id, const int device_id, const int ff_id)
@@ -438,9 +441,8 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
     }
   }
 
-  USE_SHAREMEM_C2 = SHAREMEM_32 > annmb.num_c2 * sizeof(NEP_FLOAT);
-  USE_SHAREMEM_C3 = SHAREMEM_32 > annmb.num_c3 * sizeof(NEP_FLOAT);
-  if (rank_0) printf("========= USE_SHAREMEM_C2 %d USE_SHAREMEM_C3 %d PRECISION %d ==========\n", USE_SHAREMEM_C2, USE_SHAREMEM_C3, sizeof(NEP_FLOAT));
+  USE_SHAREMEM_C2 = false;
+  USE_SHAREMEM_C3 = false;
 }
 
 NEPKK::~NEPKK(void)
@@ -506,6 +508,7 @@ int NEPKK::calculateMaxAtoms(int MN_radial, int MN_angular, int lmp_num_neigh, i
     memory_per_atom += SIZE_DOUBLE;  // nep_potential_per_atom
     
     memory_per_atom += ANNNB_DIM * SIZE_FLOAT;  // nep_Fp
+    memory_per_atom += annmb.num_neurons1 * SIZE_FLOAT;  // nep_ann_alpha
     memory_per_atom += (4 + 1) * NUM_OF_ABC * SIZE_FLOAT;  // nep_sum_fxyz
     
     // 考虑max_nall = 1.2 * max_nlocal
@@ -597,6 +600,9 @@ void NEPKK::reset_nep_data(int inum, int nlocal, int nall, int vflag_either) {
     nep_data.potential_per_atom.resize(max_nlocal);
     
     nep_data.Fp.resize(max_nlocal * annmb.dim);//复用，存储特征值，之后存储能量对特征值导数 dUi/dfeature
+    nep_data.ann_alpha.resize(
+      static_cast<size_t>(max_nlocal) * annmb.num_neurons1 *
+      (paramb.charge_mode == 2 ? 2 : 1));
     nep_data.sum_fxyz.resize(max_nlocal * (paramb.n_max_angular + 1) * NUM_OF_ABC); //保存三体feature Snlm^i，用于反向求导
     if (paramb.charge_mode == 2) {
       nep_data.charge.resize(max_nlocal);
@@ -698,6 +704,9 @@ void NEPKK::update_potential(NEP_FLOAT* parameters, ANN& ann)
   ann.c = pointer;
   convert_C(ann.c, paramb.num_types, paramb.n_max_radial, paramb.basis_size_radial);
   convert_C(ann.c+ann.num_c2, paramb.num_types, paramb.n_max_angular, paramb.basis_size_angular);
+  if (type_map_initialized_) {
+    rebuild_slimmed_coeffs_();
+  }
   // for (int t = 0; t < paramb.num_types; ++t) {
   //   ann.c_2[t]
   // }
@@ -715,8 +724,87 @@ void NEPKK::convert_C(NEP_FLOAT* d_c, int NtypeI, int Nmax, int Nbase){
 }
 
 void NEPKK::set_atom_type_map(int type_nums, const int* type_list){
+  if (type_nums <= 0 || type_list == nullptr) {
+    std::cerr << "NEPKK requires a non-empty LAMMPS-to-NEP type map." << std::endl;
+    exit(1);
+  }
+  configured_type_map_.assign(type_list, type_list + type_nums);
   atom_type_map.resize(type_nums);
   atom_type_map.copy_from_host(type_list);
+  type_map_initialized_ = true;
+  rebuild_slimmed_coeffs_();
+}
+
+void NEPKK::rebuild_slimmed_coeffs_()
+{
+  nep_type_slim::Layout layout;
+  try {
+    layout = nep_type_slim::build_layout(paramb.num_types, configured_type_map_);
+  } catch (const std::exception& error) {
+    std::cerr << "Failed to build the NEP compact type map: " << error.what() << std::endl;
+    exit(1);
+  }
+
+  sim_type_set_ = layout.sim_to_nep;
+  sim_num_types_ = static_cast<int>(sim_type_set_.size());
+  paramb.sim_num_types = sim_num_types_;
+  std::fill(paramb.nep_to_sim, paramb.nep_to_sim + NUM_ELEMENTS, static_cast<int8_t>(-1));
+  for (int nep_type = 0; nep_type < paramb.num_types; ++nep_type) {
+    paramb.nep_to_sim[nep_type] = static_cast<int8_t>(layout.nep_to_sim[nep_type]);
+  }
+
+  std::vector<NEP_FLOAT> full_c2(static_cast<size_t>(annmb.num_c2));
+  std::vector<NEP_FLOAT> full_c3(static_cast<size_t>(annmb.num_c3));
+  CHECK_CUDA_NEP(cudaMemcpy(
+    full_c2.data(), annmb.c, full_c2.size() * sizeof(NEP_FLOAT), cudaMemcpyDeviceToHost));
+  CHECK_CUDA_NEP(cudaMemcpy(
+    full_c3.data(), annmb.c + annmb.num_c2,
+    full_c3.size() * sizeof(NEP_FLOAT), cudaMemcpyDeviceToHost));
+
+  std::vector<NEP_FLOAT> compact_c2;
+  std::vector<NEP_FLOAT> compact_c3;
+  try {
+    compact_c2 = nep_type_slim::extract_coefficients(
+      full_c2,
+      paramb.num_types,
+      sim_type_set_,
+      paramb.n_max_radial_plus1,
+      paramb.basis_size_radial_plus1);
+    compact_c3 = nep_type_slim::extract_coefficients(
+      full_c3,
+      paramb.num_types,
+      sim_type_set_,
+      paramb.n_max_angular_plus1,
+      paramb.basis_size_angular_plus1);
+  } catch (const std::exception& error) {
+    std::cerr << "Failed to compact NEP coefficients: " << error.what() << std::endl;
+    exit(1);
+  }
+
+  nep_data.param_c2.resize(compact_c2.size());
+  nep_data.param_c2.copy_from_host(compact_c2.data());
+  nep_data.param_c3.resize(compact_c3.size());
+  nep_data.param_c3.copy_from_host(compact_c3.data());
+
+  const size_t c2_bytes = compact_c2.size() * sizeof(NEP_FLOAT);
+  const size_t c3_bytes = compact_c3.size() * sizeof(NEP_FLOAT);
+  USE_SHAREMEM_C2 = c2_bytes < SHAREMEM_32;
+  USE_SHAREMEM_C3 = c3_bytes < SHAREMEM_32;
+  slimmed_coeffs_ready_ = true;
+
+  if (rank_0) {
+    printf(
+      "[NEPKK] Type-slim: sim_num_types=%d/%d, C2 %.2f->%.2f KiB, "
+      "C3 %.2f->%.2f KiB, shared C2/C3=%d/%d\n",
+      sim_num_types_,
+      paramb.num_types,
+      static_cast<double>(annmb.num_c2 * sizeof(NEP_FLOAT)) / 1024.0,
+      static_cast<double>(c2_bytes) / 1024.0,
+      static_cast<double>(annmb.num_c3 * sizeof(NEP_FLOAT)) / 1024.0,
+      static_cast<double>(c3_bytes) / 1024.0,
+      USE_SHAREMEM_C2,
+      USE_SHAREMEM_C3);
+  }
 }
 
 void NEPKK::compute_bec(
@@ -821,6 +909,10 @@ void NEPKK::compute(
     void* allreduce_context,
     double* h_etot_virial_global // len=7: etot + 6 virials
 ) {
+  if (!slimmed_coeffs_ready_) {
+    std::cerr << "NEPKK compact coefficients are not initialized; pair_coeff must be set before run." << std::endl;
+    exit(1);
+  }
   int BLOCK_SIZE256 = 256;
   // int BLOCK_SIZE128 = 128;
   int BLOCK_SIZE64 = 64;
@@ -889,10 +981,10 @@ void NEPKK::compute(
 
   //增大到64后，占据多了，66.6%，但是速度变慢了一倍。因为驻留线程多了之后造成了更高的内存带宽压力
   if (USE_SHAREMEM_C2) {//把两体项系数C全部load入共享内存 Ntype*Ntype*(Nmax+1)*(Nbase+1) * 4-float
-    size_t shared_mem_size = annmb.num_c2 * sizeof(NEP_FLOAT);
+    size_t shared_mem_size = nep_data.param_c2.size() * sizeof(NEP_FLOAT);
     calc_2b_descriptor_sharemem<<<(inum - 1) / BLOCK_SIZE32 + 1, BLOCK_SIZE32, shared_mem_size>>>(
       paramb,
-      annmb.c,
+      nep_data.param_c2.data(),
       inum,
       nlocal,
       device,
@@ -909,7 +1001,7 @@ void NEPKK::compute(
   } else {// 不使用共享内存的版本，系数C直接从全局内存中读取
     calc_2b_descriptor<<<(inum - 1) / BLOCK_SIZE32 + 1, BLOCK_SIZE32>>>(
       paramb,
-      annmb,
+      nep_data.param_c2.data(),
       inum,
       nlocal,
       device,
@@ -936,52 +1028,71 @@ void NEPKK::compute(
   CUDA_CHECK_KERNEL
 
   if (USE_SHAREMEM_C3) {// 把多体系数项C全部load到shared memory中
-    size_t shared_mem_size = annmb.num_c3 * sizeof(NEP_FLOAT);
+    size_t shared_mem_size = nep_data.param_c3.size() * sizeof(NEP_FLOAT);
     calc_3b_descriptor_sharemem<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, shared_mem_size>>>(
       paramb,
-      annmb,
-      annmb.c+annmb.num_c2,
+      nep_data.param_c3.data(),
       inum,
       nlocal,
-      device,
-      annmb.dim,
       nep_data.NN_angular.data(),
       nep_data.NL_angular.data(),
       ilist,
       lmp_data.type.data(),
       lmp_data.position.data(),
       nep_data.Fp.data(),
-      nep_data.potential_per_atom.data(),
-      nep_data.charge.data(),
-      nep_data.charge_derivative.data(),
       nep_data.sum_fxyz.data());
     CUDA_CHECK_KERNEL
   } else {// 不使用共享内存的版本，系数C直接从全局内存中读取
     calc_3b_descriptor<<<(inum - 1) / BLOCK_SIZE32 + 1, BLOCK_SIZE32>>>(
       paramb,
-      annmb,
+      nep_data.param_c3.data(),
       inum,
       nlocal,
-      device,
-      annmb.dim,
       nep_data.NN_angular.data(),
       nep_data.NL_angular.data(),
       ilist,
       lmp_data.type.data(),
       lmp_data.position.data(),
       nep_data.Fp.data(),
-      nep_data.potential_per_atom.data(),
-      nep_data.charge.data(),
-      nep_data.charge_derivative.data(),
       nep_data.sum_fxyz.data());
     CUDA_CHECK_KERNEL
   }
 
-  size_t smem_bytes = 3 * sizeof(NEP_FLOAT) * BLOCK_SIZE64;  // force components fx, fy, fz
-  if (vflag_either) {
-      smem_bytes += vatom_num * sizeof(NEP_FLOAT) * BLOCK_SIZE64;    // virial: 6 or 9 components
-  }
-  smem_bytes += paramb.n_max_radial_plus1 * sizeof(NEP_FLOAT);
+  const size_t ann_q_smem = static_cast<size_t>(annmb.dim) *
+    BLOCK_SIZE64 * sizeof(NEP_FLOAT);
+  apply_ann_forward<<<
+    (inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, ann_q_smem>>>(
+    paramb,
+    annmb,
+    inum,
+    nlocal,
+    ilist,
+    lmp_data.type.data(),
+    nep_data.Fp.data(),
+    nep_data.potential_per_atom.data(),
+    nep_data.charge.data(),
+    nep_data.ann_alpha.data());
+  CUDA_CHECK_KERNEL
+
+  const int ann_atoms_per_block = 8;
+  const int ann_derivative_threads = 256;
+  const int ann_alpha_outputs = paramb.charge_mode == 2 ? 2 : 1;
+  const size_t ann_alpha_smem = static_cast<size_t>(annmb.num_neurons1) *
+    ann_atoms_per_block * ann_alpha_outputs * sizeof(NEP_FLOAT);
+  apply_ann_derivative<<<
+    (inum + ann_atoms_per_block - 1) / ann_atoms_per_block,
+    ann_derivative_threads,
+    ann_alpha_smem>>>(
+      paramb,
+      annmb,
+      inum,
+      nlocal,
+      ilist,
+      lmp_data.type.data(),
+      nep_data.ann_alpha.data(),
+      nep_data.charge_derivative.data(),
+      nep_data.Fp.data());
+  CUDA_CHECK_KERNEL
 
   if (paramb.charge_mode == 2) {
     nepkk_zero_global_mean_charge2(nlocal, natoms_global, allreduce_double, allreduce_context, nep_data.charge);
@@ -1043,13 +1154,19 @@ void NEPKK::compute(
     CUDA_CHECK_KERNEL
   }
 
-  if (paramb.charge_mode != 2 && smem_bytes < SHAREMEM_32) {
+  size_t smem_bytes = 3 * sizeof(NEP_FLOAT) * BLOCK_SIZE64;  // 力分量 fx,fy,fz
+  if (vflag_either) {
+      smem_bytes += vatom_num * sizeof(NEP_FLOAT) * BLOCK_SIZE64;    // virial: 6 or 9 components
+  }
+  smem_bytes += paramb.n_max_radial_plus1 * sizeof(NEP_FLOAT);// n_max_radial_plus1 一定是小于线程块大小的
+  const bool use_bwd_2b_perneigh = false;
+  if (paramb.charge_mode != 2 && use_bwd_2b_perneigh && smem_bytes < SHAREMEM_32) {
     backward_force_2b_perneigh<<<inum, BLOCK_SIZE64, smem_bytes>>>(
         vflag_either,
         cvflag_atom,
         vatom_num,
         paramb,
-        annmb,
+        nep_data.param_c2.data(),
         nall,
         inum,
         nlocal,
@@ -1061,15 +1178,23 @@ void NEPKK::compute(
         lmp_data.position.data(),
         nep_data.Fp.data(),
         force_per_atom,
-        virial_per_atom
+        cv_per_atom
     );
   } else {
-    backward_force_2b<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>(
+    const size_t bwd_2b_fnp_bytes =
+      static_cast<size_t>(BLOCK_SIZE64) * paramb.basis_size_radial_plus1 * sizeof(NEP_FLOAT);
+    const size_t compact_c2_bytes = nep_data.param_c2.size() * sizeof(NEP_FLOAT);
+    const bool use_bwd_2b_shared_c2 =
+      USE_SHAREMEM_C2 && compact_c2_bytes + bwd_2b_fnp_bytes < SHAREMEM_32;
+    size_t bwd_2b_smem = bwd_2b_fnp_bytes +
+      (use_bwd_2b_shared_c2 ? compact_c2_bytes : 0);
+    backward_force_2b<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, bwd_2b_smem>>>(
       vflag_either,
       cvflag_atom,
       vatom_num,
       paramb,
-      annmb,
+      nep_data.param_c2.data(),
+      use_bwd_2b_shared_c2,
       nall,
       inum,
       nlocal,
@@ -1084,34 +1209,20 @@ void NEPKK::compute(
       nep_data.D_real.data(),
       force_per_atom,
       cv_per_atom
-      );
-  }
-  int shm_float_count = 3 + paramb.dim_angular + paramb.n_max_angular_plus1 * NUM_OF_ABC;
-  shm_float_count += BLOCK_SIZE32 * MAX_NUM_N * 2;
-  size_t shared_bytes = shm_float_count * sizeof(NEP_FLOAT);
-  if (paramb.charge_mode != 2 && shared_bytes < SHAREMEM_32) {
-    dim3 grid(inum);
-    dim3 block(BLOCK_SIZE32);
-    backward_force_3b_per_atom_sharemem<<<grid, block, shared_bytes>>>(
-        paramb,
-        annmb,
-        inum,
-        nlocal,
-        nep_data.NN_angular.data(),
-        nep_data.NL_angular.data(),
-        ilist,
-        lmp_data.type.data(),
-        lmp_data.position.data(),
-        nep_data.Fp.data(),
-        nep_data.sum_fxyz.data(),
-        nep_data.f12x.data(),
-        nep_data.f12y.data(),
-        nep_data.f12z.data()
     );
-  } else {
-    backward_force_3b_dqnl<<<(inum - 1) / BLOCK_SIZE32 + 1, BLOCK_SIZE32>>>(
+  }
+  const size_t bwd_3b_fn_bytes =
+    static_cast<size_t>(2) * BLOCK_SIZE64 * paramb.basis_size_angular_plus1 * sizeof(NEP_FLOAT);
+  const size_t compact_c3_bytes = nep_data.param_c3.size() * sizeof(NEP_FLOAT);
+  const bool use_bwd_3b_shared_c3 =
+    USE_SHAREMEM_C3 && compact_c3_bytes + bwd_3b_fn_bytes < SHAREMEM_32;
+  const size_t bwd_3b_smem = bwd_3b_fn_bytes +
+    (use_bwd_3b_shared_c3 ? compact_c3_bytes : 0);
+  backward_force_3b_dqnl<<<
+    (inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, bwd_3b_smem>>>(
       paramb,
-      annmb,
+      nep_data.param_c3.data(),
+      use_bwd_3b_shared_c3,
       inum,
       nlocal,
       nep_data.NN_angular.data(),
@@ -1126,8 +1237,7 @@ void NEPKK::compute(
       nep_data.f12x.data(),
       nep_data.f12y.data(),
       nep_data.f12z.data()
-      );
-  }
+    );
   CUDA_CHECK_KERNEL
   cudaDeviceSynchronize();
 
