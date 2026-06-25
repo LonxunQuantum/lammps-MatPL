@@ -4,10 +4,10 @@ dimension       3
 boundary        p p p
 atom_style      atomic
 
-package         kokkos neigh full comm device
-newton          off
+package         kokkos neigh half comm device
+newton          on
 
-# Kokkos full neighbor list requires newton off.
+# Kokkos half neighbor list requires newton on.
 read_data       ../model.data
 mass    1 238.02891   # U
 
