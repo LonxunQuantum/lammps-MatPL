@@ -49,7 +49,7 @@ elif grep -q "$PROJECT_LINE" "$CMAKE_FILE"; then
     sed -i "s|${PROJECT_LINE}|${NEW_PROJECT_LINE}|g" "$CMAKE_FILE"
     echo "  - Project configuration updated to include CUDA"
 elif grep -q "LANGUAGES CXX C" "$CMAKE_FILE"; then
-    sed -i "s|LANGUAGES CXX C|LANGUAGES CXX C CUDA|g" "$CMAKE_FILE"
+    sed -i "/LANGUAGES CXX C/c\        LANGUAGES CXX C CUDA)" "$CMAKE_FILE"
     echo "  - Project configuration updated to include CUDA"
 else
     echo "Error: Unsupported LAMMPS version detected"
