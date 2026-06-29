@@ -870,7 +870,179 @@ static __global__ void find_bec_angular_lmp(
   }
 }
 
-static __global__ void backward_force_2b(
+static __global__ void backward_force_2b_nep(
+  int vflag_either,
+  int cvflag_atom,
+  int vatom_num,
+  NEPKK::ParaMB paramb,
+  const NEP_FLOAT* param_c2,
+  const int use_shared_c2,
+  const int nall, //all atoms
+  const int N,
+  const int nlocal,
+  const int num_neigh, // the shape[0] of Neighbor List
+  const int* g_NN,
+  const int* g_NL,
+  const int* __restrict__ g_ilist,
+  const int* __restrict__ g_type,
+  const NEP_FLOAT* __restrict__ g_pos,
+  const NEP_FLOAT* __restrict__ g_Fp,
+  double* g_f,
+  double* g_virial
+  // double* g_total_virial
+  )
+{
+  extern __shared__ NEP_FLOAT s_c2[];
+  int c2_size = paramb.sim_num_types * paramb.sim_num_types *
+    paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
+  NEP_FLOAT* s_fnp12 = s_c2 + (use_shared_c2 ? c2_size : 0);
+  if (use_shared_c2) {
+    for (int i = threadIdx.x; i < c2_size; i += blockDim.x) {
+      s_c2[i] = param_c2[i];
+    }
+  }
+  __syncthreads();
+  const NEP_FLOAT* c2 = use_shared_c2 ? s_c2 : param_c2;
+
+  int n1 = blockIdx.x * blockDim.x + threadIdx.x;
+  if (n1 < N) {
+    int atomi = g_ilist[n1];
+    int t1 = static_cast<int>(paramb.nep_to_sim[g_type[atomi]]);
+    NEP_FLOAT s_fx = FLOAT_LIT(0.0);
+    NEP_FLOAT s_fy = FLOAT_LIT(0.0);
+    NEP_FLOAT s_fz = FLOAT_LIT(0.0);
+    NEP_FLOAT s_sxx = FLOAT_LIT(0.0);
+    NEP_FLOAT s_syy = FLOAT_LIT(0.0);
+    NEP_FLOAT s_szz = FLOAT_LIT(0.0);
+    NEP_FLOAT s_sxy = FLOAT_LIT(0.0);
+    NEP_FLOAT s_sxz = FLOAT_LIT(0.0);
+    NEP_FLOAT s_syz = FLOAT_LIT(0.0);
+    NEP_FLOAT s_syx = FLOAT_LIT(0.0);
+    NEP_FLOAT s_szx = FLOAT_LIT(0.0);
+    NEP_FLOAT s_szy = FLOAT_LIT(0.0);
+    NEP_FLOAT x1 = g_pos[atomi*3  ];
+    NEP_FLOAT y1 = g_pos[atomi*3+1];
+    NEP_FLOAT z1 = g_pos[atomi*3+2];
+    int c_start = paramb.sim_num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
+    // int Fp_idx_start = atomi * annmb.dim;
+    NEP_FLOAT Fp_atomi[MAX_NUM_N];
+    for (int n = 0; n < paramb.n_max_radial_plus1; ++n) {
+      Fp_atomi[n] = g_Fp[atomi + n * nlocal];
+    }
+
+    for (int i1 = 0; i1 < g_NN[atomi]; ++i1) {
+      int n2_idx = i1 * num_neigh + atomi;
+      int n2 = g_NL[n2_idx] & NEIGHMASK;
+      int t2 = static_cast<int>(paramb.nep_to_sim[g_type[n2]]);
+      int c_idx_I = t1 * c_start + t2 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
+      int c_idx_J = t2 * c_start + t1 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
+
+      NEP_FLOAT r12[3] = {g_pos[n2*3] - x1, g_pos[n2*3+1] - y1, g_pos[n2*3+2] - z1};
+      NEP_FLOAT d12_square = r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2];
+      if (d12_square > paramb.rc_radial_square) continue;
+      NEP_FLOAT d12 = sqrt(d12_square);
+      NEP_FLOAT d12inv = FLOAT_LIT(1.0) / d12;
+      NEP_FLOAT f12[3] = {FLOAT_LIT(0.0)};
+      NEP_FLOAT f21[3] = {FLOAT_LIT(0.0)};
+      // if (0) printf("2b idx %d atomi %d t1 %d jnums %d n2 %d t2 %d r12 %f\n", n1, atomi, t1, g_NN[atomi], n2, t2, d12);
+      NEP_FLOAT fc12, fcp12;
+      find_fc_and_fcp(paramb.rc_radial, paramb.rcinv_radial, d12, fc12, fcp12);
+      NEP_FLOAT* fnp12 = s_fnp12 + threadIdx.x;
+      find_fnp_strided(
+        paramb.basis_size_radial, paramb.rcinv_radial, d12, fc12, fcp12, blockDim.x, fnp12);
+      for (int n = 0; n < paramb.n_max_radial_plus1; ++n) {
+        NEP_FLOAT gnp12 = FLOAT_LIT(0.0);
+        NEP_FLOAT gnp21 = FLOAT_LIT(0.0);
+        for (int k = 0; k < paramb.basis_size_radial_plus1; ++k) {
+          NEP_FLOAT fnp12_k = fnp12[k * blockDim.x];
+          gnp12 += fnp12_k * c2[c_idx_I + n * paramb.basis_size_radial_plus1 + k];
+          gnp21 += fnp12_k * c2[c_idx_J + n * paramb.basis_size_radial_plus1 + k];// shape of c [N_max+1, N_base+1, I, J]
+        }
+        NEP_FLOAT descriptor_derivative12 = Fp_atomi[n];
+        NEP_FLOAT tmp12 = descriptor_derivative12 * gnp12 * d12inv; //atomi + n * nlocal (dUi/diqn)*(diqn/drij)
+        NEP_FLOAT tmp21 = FLOAT_LIT(0.0);
+        if (n2 >= nlocal) {
+          for (int d = 0; d < 3; ++d) {//编译器自动展开
+            f12[d] += tmp12 * r12[d];
+          }
+        } else {
+          NEP_FLOAT descriptor_derivative21 = g_Fp[n2 + n * nlocal];
+          tmp21 = descriptor_derivative21 * gnp21 * d12inv; // (dUj/diqn)*(diqn/drij)
+          for (int d = 0; d < 3; ++d) {
+            f12[d] += tmp12 * r12[d];
+            f21[d] -= tmp21 * r12[d]; // -Rji = Rij
+          }
+        }
+      }
+      if (n2 >= nlocal) {
+        s_fx += f12[0];
+        s_fy += f12[1];
+        s_fz += f12[2];
+
+        atomicAdd(&g_f[n2*3], double(-f12[0]));// ghost atom
+        atomicAdd(&g_f[n2*3+1], double(-f12[1]));
+        atomicAdd(&g_f[n2*3+2], double(-f12[2]));
+        
+        if(vflag_either) {
+          atomicAdd(&g_virial[n2 * vatom_num + 0], -r12[0] * f12[0]);
+          atomicAdd(&g_virial[n2 * vatom_num + 1], -r12[1] * f12[1]);
+          atomicAdd(&g_virial[n2 * vatom_num + 2], -r12[2] * f12[2]);
+          atomicAdd(&g_virial[n2 * vatom_num + 3], -r12[0] * f12[1]);
+          atomicAdd(&g_virial[n2 * vatom_num + 4], -r12[0] * f12[2]);
+          atomicAdd(&g_virial[n2 * vatom_num + 5], -r12[1] * f12[2]);
+          if(cvflag_atom) {
+          atomicAdd(&g_virial[n2 * vatom_num + 6], -r12[1] * f12[0]);
+          atomicAdd(&g_virial[n2 * vatom_num + 7], -r12[2] * f12[0]);
+          atomicAdd(&g_virial[n2 * vatom_num + 8], -r12[2] * f12[1]);
+          }
+        }
+      } else {
+        s_fx += f12[0] - f21[0];
+        s_fy += f12[1] - f21[1];
+        s_fz += f12[2] - f21[2];
+        if(vflag_either) {
+          s_sxx += r12[0] * f21[0];
+          s_syy += r12[1] * f21[1];
+          s_szz += r12[2] * f21[2];
+
+          s_sxy += r12[0] * f21[1];
+          s_sxz += r12[0] * f21[2];
+          s_syz += r12[1] * f21[2];
+          if(cvflag_atom) {
+          s_syx += r12[1] * f21[0];
+          s_szx += r12[2] * f21[0];
+          s_szy += r12[2] * f21[1];
+          }
+        }
+      }
+    }
+
+    //对于ghost atom，需要加上ghost atom 对应的force；并且保存ghost atom 对应的force
+    g_f[atomi*3] += s_fx;
+    g_f[atomi*3+1] += s_fy;
+    g_f[atomi*3+2] += s_fz;
+
+    // save virial
+    // xx xy xz    0 3 4
+    // yx yy yz    6 1 5
+    // zx zy zz    7 8 2
+    if(vflag_either) {
+      g_virial[atomi * vatom_num + 0] += s_sxx;
+      g_virial[atomi * vatom_num + 1] += s_syy;
+      g_virial[atomi * vatom_num + 2] += s_szz;
+      g_virial[atomi * vatom_num + 3] += s_sxy;
+      g_virial[atomi * vatom_num + 4] += s_sxz;
+      g_virial[atomi * vatom_num + 5] += s_syz;
+      if(cvflag_atom) {
+      g_virial[atomi * vatom_num + 6] += s_syx;
+      g_virial[atomi * vatom_num + 7] += s_szx;
+      g_virial[atomi * vatom_num + 8] += s_szy;
+      }
+    }
+  }
+} 
+
+static __global__ void backward_force_2b_charge(
   int vflag_either,
   int cvflag_atom,
   int vatom_num,

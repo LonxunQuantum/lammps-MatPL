@@ -1188,28 +1188,51 @@ void NEPKK::compute(
       USE_SHAREMEM_C2 && compact_c2_bytes + bwd_2b_fnp_bytes < SHAREMEM_32;
     size_t bwd_2b_smem = bwd_2b_fnp_bytes +
       (use_bwd_2b_shared_c2 ? compact_c2_bytes : 0);
-    backward_force_2b<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, bwd_2b_smem>>>(
-      vflag_either,
-      cvflag_atom,
-      vatom_num,
-      paramb,
-      nep_data.param_c2.data(),
-      use_bwd_2b_shared_c2,
-      nall,
-      inum,
-      nlocal,
-      max_I_neigh,
-      numneigh,
-      firstneigh,
-      ilist,
-      lmp_data.type.data(),
-      lmp_data.position.data(),
-      nep_data.Fp.data(),
-      nep_data.charge_derivative.data(),
-      nep_data.D_real.data(),
-      force_per_atom,
-      cv_per_atom
-    );
+    if (paramb.charge_mode == 2) {
+      backward_force_2b_charge<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, bwd_2b_smem>>>(
+        vflag_either,
+        cvflag_atom,
+        vatom_num,
+        paramb,
+        nep_data.param_c2.data(),
+        use_bwd_2b_shared_c2,
+        nall,
+        inum,
+        nlocal,
+        max_I_neigh,
+        numneigh,
+        firstneigh,
+        ilist,
+        lmp_data.type.data(),
+        lmp_data.position.data(),
+        nep_data.Fp.data(),
+        nep_data.charge_derivative.data(),
+        nep_data.D_real.data(),
+        force_per_atom,
+        cv_per_atom
+      );
+    } else {
+      backward_force_2b_nep<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, bwd_2b_smem>>>(
+        vflag_either,
+        cvflag_atom,
+        vatom_num,
+        paramb,
+        nep_data.param_c2.data(),
+        use_bwd_2b_shared_c2,
+        nall,
+        inum,
+        nlocal,
+        max_I_neigh,
+        numneigh,
+        firstneigh,
+        ilist,
+        lmp_data.type.data(),
+        lmp_data.position.data(),
+        nep_data.Fp.data(),
+        force_per_atom,
+        cv_per_atom
+      );
+    }
   }
   const size_t bwd_3b_fn_bytes =
     static_cast<size_t>(2) * BLOCK_SIZE64 * paramb.basis_size_angular_plus1 * sizeof(NEP_FLOAT);
