@@ -1,0 +1,66 @@
+# =========================================
+# LAMMPS NEP Benchmark: WMoTaV refractory HEA
+# Potential: NEP (matpl/nep/kk)
+# Elements: W Mo Ta V
+# Structure: BCC random solid solution (a ~ 3.16 A)
+# Atoms: 128000 (250 x 8x8x8)
+# =========================================
+
+# --- Simulation Parameters ---
+variable        NSTEPS     equal 100
+variable        THERMO     equal 1
+variable        TEMP       equal 300
+variable        PRES       equal 0
+variable        TAU_T      equal 0.1
+variable        TAU_P      equal 1.0
+variable        TSTEP      equal 0.001
+
+# --- Kokkos Settings ---
+package kokkos neigh half comm device
+newton on
+
+# --- System Setup ---
+units           metal
+boundary        p p p
+atom_style      atomic
+
+read_data       ../data.lmp
+#replicate       8 8 8
+
+# --- Potential ---
+mass            1 183.84
+mass            2 95.95
+mass            3 180.9479
+mass            4 50.9415
+
+pair_style      matpl/nep/kk ../nep.txt
+pair_coeff      * * W Mo Ta V
+
+# --- Neighbor Settings ---
+neighbor        1.0 bin
+neigh_modify    every 10 delay 0 check no
+
+# --- Output ---
+thermo          ${THERMO}
+compute    allPe   all   pe
+compute    myVirial all pressure NULL virial
+variable   N_total equal count(all)
+variable   pe_peratom equal c_allPe/v_N_total
+variable   W_xx  equal c_myVirial[1]/v_N_total
+variable   W_yy  equal c_myVirial[2]/v_N_total
+variable   W_zz  equal c_myVirial[3]/v_N_total
+variable   W_xy  equal c_myVirial[4]/v_N_total
+variable   W_xz  equal c_myVirial[5]/v_N_total
+variable   W_yz  equal c_myVirial[6]/v_N_total
+
+thermo_style    custom step temp v_pe_peratom v_W_xx v_W_yy v_W_zz v_W_xy v_W_xz v_W_yz
+
+# --- Dynamics ---
+velocity        all create ${TEMP} 12345 dist gaussian mom yes rot yes
+fix             1 all nvt/kk temp ${TEMP} ${TEMP} ${TAU_T}
+timestep        ${TSTEP}
+dump            1 all custom 1 lammps.dump id type x y z fx fy fz vx vy vz
+dump_modify     1 sort id
+
+# --- Run ---
+run             ${NSTEPS}

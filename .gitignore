@@ -1,0 +1,31 @@
+# Pre-built GPU libraries (distributed via Baidu Netdisk, not in git)
+nep_gpu/*/libnep_gpu.so
+
+# License files (do not commit — except bundled eval license)
+*.lic
+!nep_gpu/summer_holiday.lic
+
+# Test outputs
+test/*/NPT/log.lammps
+test/*/NPT/lammps.dump
+test/*/NPT/screen.log
+test/*/NVT/log.lammps
+test/*/NVT/lammps.dump
+test/*/NVT/screen.log
+test/*/rerun/NPT/log.lammps
+test/*/rerun/NPT/lammps.dump
+test/*/rerun/NPT/screen.log
+test/*/rerun/NVT/log.lammps
+test/*/rerun/NVT/lammps.dump
+test/*/rerun/NVT/screen.log
+test/__pycache__/
+test/backups/
+
+# Temp test scripts
+test_*.sh
+test_*.out
+test_cu_rerun.*
+test_full.*
+
+# Claude config
+.claude/
