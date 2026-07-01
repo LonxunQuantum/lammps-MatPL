@@ -1,0 +1,7 @@
+For 10 images: 
+Average RMSE of Etot per atom: 71.28506281219687 R2: 0.0
+Average RMSE of Force: 0.08422880895553621 R2: 0.9946882312947471
+Average RMSE of Virial per atom: 0.0 R2: 0.0
+
+More details can be found under the file directory:
+/data/home/wuxingxing/codespace/lammps-MatPL/KKNEP/merge-qnep-opt/test_qnep/HfO2/MatPL-infer/test_result_nep5_ewald

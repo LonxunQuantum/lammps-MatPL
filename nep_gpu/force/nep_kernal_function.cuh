@@ -458,6 +458,18 @@ static __global__ void apply_ann_derivative(
   }
 }
 
+static __global__ void add_charge_energy_charge2(
+  const int N,
+  const NEP_FLOAT* __restrict__ g_charge,
+  const NEP_FLOAT* __restrict__ g_D_real,
+  double* g_pe)
+{
+  const int n = blockIdx.x * blockDim.x + threadIdx.x;
+  if (n < N) {
+    g_pe[n] += 0.5 * double(g_charge[n]) * double(g_D_real[n]);
+  }
+}
+
 static __global__ void backward_force_2b_perneigh(
     int vflag_either,
     int cvflag_atom,

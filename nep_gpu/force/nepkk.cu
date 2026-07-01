@@ -1152,6 +1152,12 @@ void NEPKK::compute(
     }
     nepkk_zero_global_mean_charge2(nlocal, natoms_global, allreduce_double, allreduce_context, nep_data.D_real);
     CUDA_CHECK_KERNEL
+    add_charge_energy_charge2<<<(nlocal + BLOCK_SIZE256 - 1) / BLOCK_SIZE256, BLOCK_SIZE256>>>(
+      nlocal,
+      nep_data.charge.data(),
+      nep_data.D_real.data(),
+      nep_data.potential_per_atom.data());
+    CUDA_CHECK_KERNEL
   }
 
   size_t smem_bytes = 3 * sizeof(NEP_FLOAT) * BLOCK_SIZE64;  // 力分量 fx,fy,fz

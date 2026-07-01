@@ -1,0 +1,20 @@
+#!/bin/sh
+#SBATCH --job-name=nep
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:1
+#SBATCH --gpus-per-task=1
+#SBATCH --partition=4090,4090t
+
+start=$(date +%s)
+source /opt/rh/devtoolset-8/enable
+
+module load GPUMD/sm89-5.4
+which nep
+
+nep
+
+end=$(date +%s)
+take=$(( end - start ))
+echo Time taken to execute commands is ${take} seconds
+

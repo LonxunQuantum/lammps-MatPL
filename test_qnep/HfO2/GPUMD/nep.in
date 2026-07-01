@@ -1,0 +1,11 @@
+version 4
+model_type 0
+type 2 O Hf
+zbl 1.5
+cutoff 8.0 4.0
+n_max 4 4
+basis_size 8 8
+l_max 4 2 0
+neuron 30
+charge_mode 2
+prediction 1
