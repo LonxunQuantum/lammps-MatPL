@@ -1,0 +1,1 @@
+/data/home/wuxingxing/datas/training_test/mgpus/HfO2/mgnep/stdallb1-qnep/qnep-factor1.0/nep5/model_record/nep5.txt
