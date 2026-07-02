@@ -15,6 +15,10 @@ exec > >(tee "$LOG_FILE") 2>&1
 echo "Validation root: $ROOT_DIR"
 echo "Started at: $(date)"
 
+set +u
+source "$ROOT_DIR/env.sh"
+set -u
+
 OVERALL_STATUS=0
 
 run_step() {

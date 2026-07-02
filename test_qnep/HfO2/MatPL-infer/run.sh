@@ -17,13 +17,11 @@ if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
 fi
 
 start=$(date +%s)
-module load cuda/11.8-share
-source /data/home/wuxingxing/anaconda3/etc/profile.d/conda.sh
-conda activate matpl-2026.3
-#export CUDA_VISIBLE_DEVICES=''
 set +u
-source ~/xcode/qnep-op/env.sh
+source ../env.sh
 set -u
+module load cuda/11.8-share
+#export CUDA_VISIBLE_DEVICES=''
 
 if [ -n "${SLURM_JOB_NODELIST:-}" ]; then
     MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
