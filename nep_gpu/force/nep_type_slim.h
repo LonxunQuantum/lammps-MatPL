@@ -23,7 +23,8 @@ inline Layout build_layout(const int num_nep_types, const std::vector<int>& conf
   std::vector<bool> seen(static_cast<std::size_t>(num_nep_types), false);
   for (std::size_t i = 0; i < configured_nep_types.size(); ++i) {
     const int type = configured_nep_types[i];
-    if (type < 0 || type >= num_nep_types) {
+    if (type == -1) continue;
+    if (type < -1 || type >= num_nep_types) {
       throw std::out_of_range("LAMMPS type maps outside the NEP type range");
     }
     seen[static_cast<std::size_t>(type)] = true;
@@ -37,6 +38,8 @@ inline Layout build_layout(const int num_nep_types, const std::vector<int>& conf
       static_cast<int>(layout.sim_to_nep.size());
     layout.sim_to_nep.push_back(nep_type);
   }
+  if (layout.sim_to_nep.empty())
+    throw std::invalid_argument("At least one atom type must be active");
   return layout;
 }
 

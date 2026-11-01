@@ -1,714 +1,414 @@
-#include <torch/script.h>
-#include <torch/torch.h>
-#include <iostream>
-#include <chrono>
-#include <cmath>
-#include <cstring>
-#include <fstream>
 #include "pair_dp.h"
 #include "atom.h"
 #include "comm.h"
 #include "error.h"
-#include "fix.h"
 #include "force.h"
 #include "memory.h"
 #include "neigh_list.h"
-#include "neigh_request.h"
 #include "neighbor.h"
 #include "update.h"
-#include "domain.h"
-#include <dlfcn.h>
-#ifdef USE_CUDA
-#include <cuda_runtime.h>
-#endif
-using namespace LAMMPS_NS;
+#include <torch/torch.h>
+#include <torch/csrc/autograd/autograd.h>
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <limits>
+#include <stdexcept>
 
-/* ---------------------------------------------------------------------- */
+using namespace LAMMPS_NS;
 
 PairDP::PairDP(LAMMPS *lmp) : Pair(lmp)
 {
-    me = comm->me;
-	writedata = 1;
-    comm_reverse = 3;
-
-    restartinfo = 0;//  set to 0 if your pair style does not store data in restart files
-    manybody_flag = 1; //set to 1 if your pair style is not pair-wise additive
-    single_enable = 0; 
-    // copymode = 0;
-    // allocated = 0;
-
+  me = comm->me;
+  writedata = 1;
+  comm_reverse = 3;
+  restartinfo = 0;
+  manybody_flag = 1;
+  single_enable = 0;
+  one_coeff = 1;
+  no_virial_fdotr_compute = 1;
+  centroidstressflag = CENTROID_NOTAVAIL;
 }
 
 PairDP::~PairDP()
 {
-    // if (copymode)
-    //     return;
-
-    if (allocated) 
-    {
-        memory->destroy(setflag);
-        memory->destroy(cutsq);
-        memory->destroy(f_n);
-        memory->destroy(e_atom_n);
-    }
-    if (me == 0 && explrError_fp != nullptr) {
-        fclose(explrError_fp);
-        explrError_fp = nullptr;
-    }
+  if (allocated) {
+    memory->destroy(setflag);
+    memory->destroy(cutsq);
+  }
+  memory->destroy(f_n);
+  memory->destroy(e_atom_n);
+  if (explrError_fp) fclose(explrError_fp);
 }
-
-/* ----------------------------------------------------------------------
-   allocate all arrays
-------------------------------------------------------------------------- */
 
 void PairDP::allocate()
 {
-    allocated = 1;
-    int np1 = atom->ntypes ;
-    memory->create(setflag, np1 + 1, np1 + 1, "pair:setflag");
-    for (int i = 1; i <= np1; i++)
-        for (int j = i; j <= np1; j++) setflag[i][j] = 0;
-    memory->create(cutsq, np1 + 1, np1 + 1, "pair:cutsq");
-
+  allocated = 1;
+  const int n = atom->ntypes;
+  memory->create(setflag, n + 1, n + 1, "pair_dp:setflag");
+  memory->create(cutsq, n + 1, n + 1, "pair_dp:cutsq");
+  for (int i = 1; i <= n; ++i)
+    for (int j = i; j <= n; ++j) setflag[i][j] = 0;
 }
 
-/* ----------------------------------------------------------------------
-   global settings pair_style 
-------------------------------------------------------------------------- */
-
-void PairDP::settings(int narg, char** arg)
+void PairDP::settings(int narg, char **arg)
 {
-    int ff_idx;
-    int iarg = 0;  // index of first forcefield file
-    int rank;
-    int num_devices;
-
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    num_devices = torch::cuda::device_count();
-
-    if (narg <= 0) error->all(FLERR, "Illegal pair_style command"); // numbers of args after 'pair_style matpl'
-    std::vector<std::string> models;
-
-    num_ff = 0;
-    while (iarg < narg) {
-        std::string arg_str(arg[iarg]);
-        if (arg_str.find(".pt") != std::string::npos || arg_str.find(".txt") != std::string::npos) {
-            models.push_back(arg_str);
-            num_ff++;
-            iarg++;
-        } else {
-            break;
-        }
+  if (!narg) error->all(FLERR, "Pair style matpl/dp requires at least one model");
+  memory->destroy(f_n);
+  memory->destroy(e_atom_n);
+  nmax = 0;
+  modules.clear();
+  model_data.clear();
+  active_species.clear();
+  cutoff = 0.0;
+  if (explrError_fp) { fclose(explrError_fp); explrError_fp = nullptr; }
+  out_freq = 1;
+  explrError_fname = "explr.error";
+  std::vector<std::string> filenames;
+  int iarg = 0;
+  while (iarg < narg) {
+    const std::string name(arg[iarg]);
+    if (name.find(".pt") == std::string::npos && name.find(".txt") == std::string::npos) break;
+    filenames.push_back(name);
+    ++iarg;
+  }
+  if (filenames.empty()) error->all(FLERR, "Pair style matpl/dp requires at least one model");
+  while (iarg < narg) {
+    if (iarg + 1 >= narg) error->all(FLERR, "Missing value in matpl/dp pair_style settings");
+    if (strcmp(arg[iarg], "out_freq") == 0) {
+      out_freq = utils::inumeric(FLERR, arg[iarg + 1], false, lmp);
+      if (out_freq <= 0) error->all(FLERR, "matpl/dp out_freq must be positive");
+    } else if (strcmp(arg[iarg], "out_file") == 0) {
+      explrError_fname = arg[iarg + 1];
+    } else error->all(FLERR, "Unknown matpl/dp pair_style option: " + std::string(arg[iarg]));
+    iarg += 2;
+  }
+  const int devices = torch::cuda::device_count();
+  device = torch::cuda::is_available() && devices > 0 ?
+      torch::Device(torch::kCUDA, me % devices) : torch::Device(torch::kCPU);
+  for (const auto &filename : filenames) {
+    try {
+      auto model = torch::jit::load(filename, device);
+      model.to(torch::kFloat64);
+      if (model.hasattr("model_type") && model.attr("model_type").toStringRef() != "DP")
+        throw std::invalid_argument("model_type must be DP");
+      ModelData data;
+      data.cutoff = model.attr("Rmax").toDouble();
+      const auto maximum = model.attr("maxNeighborNum").toInt();
+      const auto species = model.attr("atom_type").toList();
+      if (!std::isfinite(data.cutoff) || data.cutoff <= 0.0 || maximum <= 0 ||
+          maximum > std::numeric_limits<int>::max() || species.size() == 0 ||
+          species.size() > static_cast<size_t>(std::numeric_limits<int>::max() / maximum))
+        throw std::invalid_argument("Rmax, maxNeighborNum and atom_type must be valid");
+      data.max_neighbor = static_cast<int>(maximum);
+      for (size_t t = 0; t < species.size(); ++t) {
+        const auto z = species.get(t).toInt();
+        if (z < 1 || z > 94 || std::find(data.atomic_numbers.begin(), data.atomic_numbers.end(), z) != data.atomic_numbers.end())
+          throw std::invalid_argument("atom_type must contain unique supported atomic numbers");
+        data.atomic_numbers.push_back(static_cast<int>(z));
+      }
+      cutoff = std::max(cutoff, data.cutoff);
+      modules.push_back(std::move(model));
+      model_data.push_back(std::move(data));
+    } catch (const std::exception &e) {
+      error->all(FLERR, "Invalid DP model metadata or load failure in " + filename + ": " + e.what());
     }
-    while (iarg < narg) {
-        if (strcmp(arg[iarg], "out_freq") == 0) {
-            out_freq = utils::inumeric(FLERR, arg[++iarg], false, lmp);
-        } else if (strcmp(arg[iarg], "out_file") == 0) {
-            explrError_fname = arg[++iarg];
-        } 
-        iarg++;
+  }
+  num_ff = static_cast<int>(modules.size());
+  if (me == 0) {
+    utils::logmesg(lmp, "Loaded {} DP model(s) on {}, union cutoff {}\n", num_ff,
+                  device.is_cuda() ? "GPU" : "CPU", cutoff);
+    if (num_ff > 1) {
+      explrError_fp = fopen(explrError_fname.c_str(), "w");
+      if (!explrError_fp) error->one(FLERR, "Cannot open DP model deviation output: " + explrError_fname);
+      fprintf(explrError_fp, "%9s %16s %16s %16s %16s %16s %16s\n", "#    step",
+              "avg_devi_f", "min_devi_f", "max_devi_f", "avg_devi_e", "min_devi_e", "max_devi_e");
+      fflush(explrError_fp);
     }
-
-    if (me == 0 and num_ff > 1) {
-        explrError_fp = fopen(&explrError_fname[0], "w");
-        fprintf(explrError_fp, "%9s %16s %16s %16s %16s %16s %16s\n", 
-        "#    step", "avg_devi_f", "min_devi_f", "max_devi_f", 
-        "avg_devi_e", "min_devi_e", "max_devi_e");
-        fflush(explrError_fp);
-    }
-
-    // device = torch::cuda::is_available() ? torch::kCUDA : torch::kCPU;
-    torch::DeviceType device_type = torch::cuda::is_available() ? torch::kCUDA : torch::kCPU;
-    device = device_type == torch::kCUDA ?  torch::Device(device_type, rank % num_devices) : torch::Device(device_type);
-    dtype = torch::kFloat64;
-
-    // std::cout<<"the numbor of gpu is " <<  num_devices << std::endl;
-    // std::cout<<"the mpi process is " << comm->nprocs << std::endl;
-    
-    if (me == 0) utils::logmesg(this -> lmp, "<---- Loading model ---->\n");
-    
-    for (ff_idx = 0; ff_idx < num_ff; ff_idx++) {
-        std::string model_file = models[ff_idx];
-        try
-        {   // load jit model, they are DP
-            // module = torch::jit::load(model_file, c10::Device(device)); 
-            module = torch::jit::load(model_file, device);
-            module.to(dtype);
-            // module.eval();
-            modules.push_back(module);
-            if (me == 0) printf("\nLoading jitscript model file:   %s\n", model_file.c_str());
-            model_type = 0;
-        }
-        catch (const c10::Error e)
-        {
-           std::cerr << "Failed to load model :" << e.msg() << std::endl;
-        }
-    }
-    if (model_type == 0) {
-        if ((device_type == torch::kCUDA) && (rank == 0)) {
-            if (num_devices < comm->nprocs) {
-            std::cout << "----------------------------------------------------------------------------------" << std::endl;
-            std::cout << " Warning: There are " << num_devices << " GPUs available " << std::endl;
-            std::cout << " But have " << comm->nprocs << " MPI processes, may result in poor performance!!!" << std::endl;
-            std::cout << "----------------------------------------------------------------------------------" << std::endl;
-            }
-        }
-        try {
-            torch::jit::IValue model_type_value = module.attr("model_type");
-            model_name = model_type_value.toString()->string();
-        }
-        catch (const torch::jit::ObjectAttributeError& e) {
-            model_name = "DP";
-        }
-        if (model_name == "DP") {
-            cutoff = module.attr("Rmax").toDouble();
-        } else {  
-            std::cout << "ERROR: the model_type of input model " << model_name << " is not supported! Please check the input model! " << std::endl;
-            error->universe_all(FLERR, "ERROR: the model_type of input model is not supported! Please check the input model!");
-        }
-
-        //common params of DP
-        max_neighbor = module.attr("maxNeighborNum").toInt();
-        
-        // print information
-        if (me == 0) {
-        utils::logmesg(this -> lmp, "<---- Load model successful!!! ---->");
-        printf("\nDevice:       %s", device == torch::kCPU ? "CPU" : "GPU");
-        printf("\nModel type:   %5d",5);
-        printf("\nModel nums:   %5d",num_ff);
-        printf("\ncutoff :      %12.6f",cutoff);
-        printf("\nmax_neighbor: %5d\n", max_neighbor);
-        }
-    } 
-    // since we need num_ff, so well allocate memory here
-    // but not in allocate()
-    nmax = num_ff;
-    memory->create(f_n, num_ff, nmax, 3, "pair_dp:f_n");
-    memory->create(e_atom_n, num_ff, nmax, "pair_dp:e_atom_n");
-} 
-
-/* ----------------------------------------------------------------------
-   set coeffs for one or more type pairs pair_coeff 
-------------------------------------------------------------------------- */
-int PairDP::find_atomic_number(std::string& key) {
-    std::transform(key.begin(), key.end(), key.begin(), ::tolower);
-    if (key.length() == 1) { key += " "; }
-    key.resize(2);
-
-    std::vector<std::string> element_table = {
-        "h ","he",
-        "li","be","b ","c ","n ","o ","f ","ne",
-        "na","mg","al","si","p ","s ","cl","ar",
-        "k ","ca","sc","ti","v ","cr","mn","fe","co","ni","cu",
-        "zn","ga","ge","as","se","br","kr",
-        "rb","sr","y ","zr","nb","mo","tc","ru","rh","pd","ag",
-        "cd","in","sn","sb","te","i ","xe",
-        "cs","ba","la","ce","pr","nd","pm","sm","eu","gd","tb","dy",
-        "ho","er","tm","yb","lu","hf","ta","w ","re","os","ir","pt",
-        "au","hg","tl","pb","bi","po","at","rn",
-        "fr","ra","ac","th","pa","u ","np","pu"
-    };
-
-    std::vector<std::string> element_table2 = {
-        "1 ","2 ",
-        "3 ","4 ","5 ","6 ","7 ","8 ","9 ","10",
-        "11","12","13","14","15","16","17","18",
-        "19","20","21","22","23","24","25","26","27","28","29",
-        "30","31","32","33","34","35","36",
-        "37","38","39","40","41","42","43","44","45","46","47",
-        "48","49","50","51","52","53","54",
-        "55","56","57","58","59","60","61","62","63","64","65","66",
-        "67","68","69","70","71","72","73","74","75","76","77","78",
-        "79","80","81","82","83","84","85","86",
-        "87","88","89","90","91","92","93","94",
-    };
-    
-    for (size_t i = 0; i < element_table.size(); ++i) {
-        if (element_table[i] == key) {
-            int atomic_number = i + 1;
-            return atomic_number;
-        }else if(element_table2[i] == key) {
-            int atomic_number = i + 1;
-            return atomic_number;
-        }
-    }
-
-    // if not the case
-    return -1;
-}
-
-void PairDP::coeff(int narg, char** arg)
-{
-    // int ntypes = atom->ntypes;
-    if (!allocated) { allocate(); }
-
-    // pair_coeff * * 
-    int ilo, ihi, jlo, jhi;
-    utils::bounds(FLERR, arg[0], 1, atom->ntypes, ilo, ihi, error); // arg[0] = *
-    utils::bounds(FLERR, arg[1], 1, atom->ntypes, jlo, jhi, error); // arg[1] = *
-
-    int count = 0;
-    for(int i = ilo; i <= ihi; i++) {
-        for(int j = MAX(jlo,i); j <= jhi; j++) 
-        {
-            setflag[i][j] = 1;
-            count++;
-        }
-    }
-
-    if (model_type == 0) {
-        auto atom_type_module = module.attr("atom_type").toList();
-        model_ntypes = atom_type_module.size();
-        // if (ntypes > model_ntypes || ntypes != narg - 2)  // type numbers in strucutre file and in pair_coeff should be the same
-        // {
-        //     error->all(FLERR, "Element mapping is not correct, ntypes = " + std::to_string(ntypes));
-        // }
-        for (int ii = 2; ii < narg; ++ii) {
-            std::string element = utils::strdup(arg[ii]);  // LAMMPS提供的安全转换
-            int temp = find_atomic_number(element);
-            // int temp = std::stoi(arg[ii]);
-            auto iter = std::find(atom_type_module.begin(), atom_type_module.end(), temp);   
-            if (iter != atom_type_module.end() || arg[ii] == 0)
-            {
-                int index = std::distance(atom_type_module.begin(), iter);
-                model_atom_type_idx.push_back(index);
-                atom_types.push_back(temp);
-            }
-            else
-            {
-                error->all(FLERR, "This element is not included in the machine learning force field");
-            }
-        }
-    }
-   if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients");
-}
-
-/* ----------------------------------------------------------------------
-   init for one type pair i,j and corresponding j,i
-------------------------------------------------------------------------- */
-
-double PairDP::init_one(int i, int j)
-{
-    //if (setflag[i][j] == 0) { error->all(FLERR, "All pair coeffs are not set"); 
-
-    return cutoff;
-}
-
-
-void PairDP::init_style()
-{
-    if (force->newton_pair == 0) error->all(FLERR, "Pair style MATPL requires newton pair on");
-    // Using a nearest neighbor table of type full
-    neighbor->add_request(this, NeighConst::REQ_FULL);
-
-    cutoffsq = cutoff * cutoff;
-    int n = atom->ntypes;
-    for (int i = 1; i <= n; i++)
-        for (int j = 1; j <= n; j++)
-        cutsq[i][j] = cutoffsq;
-}
-/* ---------------------------------------------------------------------- */
-
-std::tuple<double, double, double, double, double, double> PairDP::calc_max_error(double ***f_n, double **e_atom_n)
-{
-    int i, j;
-    int ff_idx;
-    double num_ff_inv;
-    int nlocal = atom->nlocal;
-    // int *tag = atom->tag;
-    num_ff_inv = 1.0 / num_ff;
-
-    for (ff_idx = 0; ff_idx < num_ff; ff_idx++) {
-        p_ff_idx = ff_idx;
-        comm->reverse_comm(this);
-    }
-
-    std::vector<double> f_ave;
-    std::vector<double> f_err[num_ff];
-    std::vector<double> f_max_meanff;
-    std::vector<double> ei_ave;
-    std::vector<double> ei_err[num_ff];
-    std::vector<double> ei_max_meanff;
-
-    f_ave.resize(nlocal * 3);
-    ei_ave.resize(nlocal);
-    f_max_meanff.resize(nlocal);
-    ei_max_meanff.resize(nlocal);
-    for (ff_idx = 0; ff_idx < num_ff; ff_idx++) {
-        f_err[ff_idx].resize(nlocal * 3);
-        ei_err[ff_idx].resize(nlocal);
-    }
-
-    // sum over all models
-    for (ff_idx = 0; ff_idx < num_ff; ff_idx++) {
-        for (i = 0; i < nlocal; i++) {
-            // std::cout << "f_n[" << ff_idx << "][" << i << "][0] = " << tag[i] << " " << f_n[ff_idx][i][0] << std::endl;
-            f_ave[i * 3 + 0] += f_n[ff_idx][i][0];
-            f_ave[i * 3 + 1] += f_n[ff_idx][i][1];
-            f_ave[i * 3 + 2] += f_n[ff_idx][i][2];
-            ei_ave[i] += e_atom_n[ff_idx][i];
-            // std::cout<< "ff " << ff_idx << " i " << i << " ei " <<  e_atom_n[ff_idx][i] << " force " << f_n[ff_idx][i][0] << " "  << f_n[ff_idx][i][1] << " "  << f_n[ff_idx][i][2] << std::endl;
-        }
-    }
-
-    // calc ensemble average
-    for (i = 0; i < 3 * nlocal; i++) {
-        f_ave[i] *= num_ff_inv;
-    }
-    for (i = 0; i < nlocal; i++) {
-        ei_ave[i] *= num_ff_inv;
-    }
-
-    // calc error
-    for (ff_idx = 0; ff_idx < num_ff; ff_idx++) {
-        for (i = 0; i < nlocal; i++) {
-            f_err[ff_idx][i * 3 + 0] = f_n[ff_idx][i][0] - f_ave[i * 3 + 0];
-            f_err[ff_idx][i * 3 + 1] = f_n[ff_idx][i][1] - f_ave[i * 3 + 1];
-            f_err[ff_idx][i * 3 + 2] = f_n[ff_idx][i][2] - f_ave[i * 3 + 2];
-            ei_err[ff_idx][i] = e_atom_n[ff_idx][i] - ei_ave[i];
-        }
-    }
-
-    // find max error
-    for (ff_idx = 0; ff_idx < num_ff; ff_idx++) {
-        for (j = 0; j < nlocal * 3; j += 3) {
-            f_max_meanff[j / 3] += f_err[ff_idx][j] * f_err[ff_idx][j] + f_err[ff_idx][j + 1] * f_err[ff_idx][j + 1] + f_err[ff_idx][j + 2] * f_err[ff_idx][j + 2];
-        }
-        for (j = 0; j < nlocal; j++) {
-            ei_max_meanff[j] += ei_err[ff_idx][j] * ei_err[ff_idx][j];
-        }
-    }
-
-    double min_f_err, max_f_err, avg_f_err, min_ei_err, max_ei_err, avg_ei_err;
-    min_f_err = 10000;
-    max_f_err = 0.0;
-    avg_f_err = 0.0;
-    min_ei_err = 10000;
-    max_ei_err = 0.0;
-    avg_ei_err = 0.0;
-
-    double _tmp_f = 0.0;
-    double _tmp_ei = 0.0;
-    // find max_mean error
-    for (j = 0; j < nlocal; j++) {
-        _tmp_f = sqrt(f_max_meanff[j] / num_ff);
-        _tmp_ei  = sqrt(ei_max_meanff[j]/ num_ff);
-        if (min_f_err > _tmp_f) min_f_err = _tmp_f;
-        if (max_f_err < _tmp_f) max_f_err = _tmp_f;
-        if (min_ei_err > _tmp_ei) min_ei_err = _tmp_ei;
-        if (max_ei_err < _tmp_ei) max_ei_err = _tmp_ei;
-        avg_f_err  += _tmp_f;
-        avg_ei_err += _tmp_ei;
-    }
-
-    return std::make_tuple(avg_f_err, max_f_err, min_f_err, avg_ei_err, max_ei_err, min_ei_err);
-}
-
-int PairDP::pack_reverse_comm(int n, int first, double* buf) {
-    int i, m, last;
-
-    m = 0;
-    last = first + n;
-    for (i = first; i < last; i++) {
-        buf[m++] = f_n[p_ff_idx][i][0];
-        buf[m++] = f_n[p_ff_idx][i][1];
-        buf[m++] = f_n[p_ff_idx][i][2];
-    }
-    return m;
-}
-
-void PairDP::unpack_reverse_comm(int n, int* list, double* buf) {
-    int i, j, m;
-
-    m = 0;
-    for (i = 0; i < n; i++) {
-        j = list[i];
-        f_n[p_ff_idx][j][0] += buf[m++];
-        f_n[p_ff_idx][j][1] += buf[m++];
-        f_n[p_ff_idx][j][2] += buf[m++];
-    }
-
-}
-
-void PairDP::grow_memory(int nall)
-{
-  if (nmax < nall) {
-    // printf("allocate new %7d %7d %7d\n", update->ntimestep, nmax, nall);
-    nmax = nall;
-    memory->grow(f_n, num_ff, nmax, 3, "pair_matpl:f_n");
-    memory->grow(e_atom_n, num_ff, nmax, "pair_matpl:e_atom_n");
   }
 }
 
-std::tuple<std::vector<int>, std::vector<int>, std::vector<double>> PairDP::generate_neighdata()
-{   
-    int i, j, ii, jj, inum, jnum, itype, jtype;
-    double delx, dely, delz, rsq, rij;
-    int *ilist, *jlist, *numneigh, **firstneigh;
-    int etnum;
+void PairDP::coeff(int narg, char **arg)
+{
+  if (narg != atom->ntypes + 2)
+    error->all(FLERR, "Expected one mapping per LAMMPS atom type in matpl/dp pair_coeff");
+  int ilo, ihi, jlo, jhi;
+  utils::bounds(FLERR, arg[0], 1, atom->ntypes, ilo, ihi, error);
+  utils::bounds(FLERR, arg[1], 1, atom->ntypes, jlo, jhi, error);
+  if (ilo != 1 || ihi != atom->ntypes || jlo != 1 || jhi != atom->ntypes)
+    error->all(FLERR, "Pair matpl/dp coefficients require the full * * type range");
+  std::vector<std::string> symbols;
+  for (int i = 2; i < narg; ++i) symbols.emplace_back(arg[i]);
+  std::vector<MatPL::AtomTypeMapping> mappings;
+  try {
+    for (const auto &data : model_data)
+      mappings.push_back(MatPL::build_atom_type_mapping(atom->ntypes, symbols, data.atomic_numbers));
+    MatPL::validate_active_masks(mappings);
+  } catch (const std::exception &e) {
+    error->all(FLERR, "DP atom type mapping: " + std::string(e.what()));
+  }
+  if (mappings.empty()) error->all(FLERR, "DP models must be loaded before pair_coeff");
+  active_species.clear();
+  for (int z : mappings[0].atomic_number)
+    if (z && std::find(active_species.begin(), active_species.end(), z) == active_species.end())
+      active_species.push_back(z);
+  for (int i = 0; i < num_ff; ++i) model_data[i].mapping = std::move(mappings[i]);
+  if (!allocated) allocate();
+  // Register every pair independently of activity: hybrid dispatch needs these flags.
+  for (int i = 1; i <= atom->ntypes; ++i)
+    for (int j = i; j <= atom->ntypes; ++j) setflag[i][j] = 1;
+}
 
-    double **x = atom->x;
-    int *type = atom->type;
-    int nlocal = atom->nlocal;
-    int nghost = atom->nghost;
-    // int ntypes = atom->ntypes;
-    int ntypes = model_ntypes;
-    int n_all = nlocal + nghost;
-    double rc2 = cutoff * cutoff;
+double PairDP::init_one(int, int) { return cutoff; }
 
-    double min_dR = 1000;
-    double min_dR_all;
+void PairDP::init_style()
+{
+  if (!force->newton_pair) error->all(FLERR, "Pair style matpl/dp requires newton pair on");
+  if (active_species.empty()) error->all(FLERR, "Pair style matpl/dp requires atom type mappings");
+  neighbor->add_request(this, NeighConst::REQ_FULL);
+  for (int i = 1; i <= atom->ntypes; ++i)
+    for (int j = 1; j <= atom->ntypes; ++j) cutsq[i][j] = cutoff * cutoff;
+}
 
-    inum = list->inum;
-    ilist = list->ilist;
-    numneigh = list->numneigh;
-    firstneigh = list->firstneigh;
-
-    std::vector<std::vector<int>> num_neigh(inum, std::vector<int>(ntypes));
-    // imagetype.resize(inum);
-    imagetype_map.resize(inum);
-    neighbor_list.resize(inum * ntypes * max_neighbor);
-    dR_neigh.resize(inum * ntypes * max_neighbor * 4);
-    // use_type.resize(n_all);
-    std::vector<int> type_to_model(n_all);
-
-
-    for (int ii = 0; ii < n_all; ii++)
-    {
-        // use_type[ii] = atom_types[type[ii] - 1];
-        type_to_model[ii] = model_atom_type_idx[type[ii] - 1] + 1;
-        // type[0], type[1], type[2], type[3], type[4], : 2, 2, 1, 2, 2, ...
-        // atom_types[0], atom_types[1] : 6, 1
-        // use_type[0], use_type[1], use_type[2], use_type[3], use_type[4] : 1, 1, 6, 1, 1, ...
+PairDP::PackedData PairDP::generate_neighdata(int model_index)
+{
+  const auto &data = model_data[model_index];
+  const auto &mapping = data.mapping;
+  const int nlocal = atom->nlocal, nall = nlocal + atom->nghost;
+  const int width = static_cast<int>(data.atomic_numbers.size()) * data.max_neighbor;
+  // Hybrid skip lists omit entire centers. Full mapping requires every active
+  // owned center to be covered before any firstneigh/numneigh access.
+  if (list->inum != nlocal) {
+    std::vector<unsigned char> listed(nlocal, 0);
+    for (int ii = 0; ii < list->inum; ++ii) {
+      const int i = list->ilist[ii];
+      if (i >= 0 && i < nlocal) listed[i] = 1;
     }
-    for (i = 0; i < nlocal; i++) {
-        for (j = 0; j < ntypes; j++) {
-            num_neigh[i][j] = 0;
-        }
+    for (int i = 0; i < nlocal; ++i)
+      if (mapping.active[atom->type[i] - 1] && !listed[i])
+        error->one(FLERR, "DP active center missing from neighbor list; hybrid assignments must include every active DP atom type");
+  }
+  PackedData packed;
+  packed.original_to_packed.assign(nall, -1);
+  // TorchScript concatenates Ei by the supplied configured species order.
+  for (int z : active_species)
+    for (int i = 0; i < nlocal; ++i)
+      if (mapping.atomic_number[atom->type[i] - 1] == z) {
+        packed.original_to_packed[i] = static_cast<int>(packed.packed_to_original.size());
+        packed.packed_to_original.push_back(i);
+        packed.center_types.push_back(mapping.model_index[atom->type[i] - 1]);
+      }
+  packed.nlocal = static_cast<int>(packed.packed_to_original.size());
+  for (int i = nlocal; i < nall; ++i)
+    if (mapping.active[atom->type[i] - 1]) {
+      packed.original_to_packed[i] = static_cast<int>(packed.packed_to_original.size());
+      packed.packed_to_original.push_back(i);
     }
-    for (ii = 0; ii < inum; ii++)               // local atoms: 5, CH4
-    {    
-        i = ilist[ii];                          // 0, 1, 2, 3, 4
-        // itype = type[i];                        // 2, 2, 1, 2, 2
-        itype = type_to_model[i];                   // 1, 1, 3, 1, 1
-        jlist = firstneigh[i];
-        jnum = numneigh[i];                     // 4, 4, 4, 4, 4
-        imagetype_map[ii] = itype - 1;          // 1, 1, 0, 1, 1        python index from 0
-        // imagetype[ii] = use_type[i];            // 1, 1, 6, 1, 1
-
-        for (jj = 0; jj < jnum; jj++)
-        {
-            j = jlist[jj];                      // 1, 2, 3, 4;   0, 2, 3, 4;   0, 1, 3, 4;   0, 1, 2, 4;   0, 1, 2, 3
-            delx = x[j][0] - x[i][0];
-            dely = x[j][1] - x[i][1];
-            delz = x[j][2] - x[i][2];
-            rsq = delx * delx + dely * dely + delz * delz;
-            // jtype = type[j];                    // 2, 1, 2, 2;   2, 1, 2, 2;   2, 2, 2, 2;   2, 2, 1, 2;   2, 2, 1, 2
-            jtype = type_to_model[j];               // 1, 3, 1, 1;   1, 3, 1, 1;   1, 1, 1, 1;   1, 1, 3, 1;   1, 1, 3, 1
-            if (rsq <= rc2) 
-            {
-                etnum = num_neigh[i][jtype - 1];
-                rij = sqrt(rsq);
-                int index = i * ntypes * max_neighbor + (jtype - 1) * max_neighbor + etnum;
-                dR_neigh[index * 4 + 0] = rij;
-                dR_neigh[index * 4 + 1] = delx;
-                dR_neigh[index * 4 + 2] = dely;
-                dR_neigh[index * 4 + 3] = delz;
-                neighbor_list[index] = j + 1;
-                num_neigh[i][jtype - 1] += 1;
-                // std::cout << "num_neigh[" << i << "][" << jtype - 1 << "] = " << num_neigh[i][jtype - 1] << std::endl;
-                if (rsq < min_dR) min_dR = rsq;
-                // std::cout<< "nlist index " << index << " j " << j+1 << std::endl;
-            }
-        }
+  packed.nghost = static_cast<int>(packed.packed_to_original.size()) - packed.nlocal;
+  const size_t edges = static_cast<size_t>(packed.nlocal) * width;
+  // Padding must be zero on every call, including after migration or population changes.
+  packed.neighbors.assign(edges, 0);
+  packed.displacements.assign(edges * 4, 0.0);
+  double min_rsq = std::numeric_limits<double>::infinity();
+  for (int center = 0; center < packed.nlocal; ++center) {
+    const int i = packed.packed_to_original[center];
+    std::vector<int> counts(data.atomic_numbers.size(), 0);
+    for (int jj = 0; jj < list->numneigh[i]; ++jj) {
+      const int j = list->firstneigh[i][jj] & NEIGHMASK;
+      // Mask before distances: even a coincident NULL atom is outside the model.
+      if (!mapping.active[atom->type[j] - 1]) continue;
+      const double dx = atom->x[j][0] - atom->x[i][0];
+      const double dy = atom->x[j][1] - atom->x[i][1];
+      const double dz = atom->x[j][2] - atom->x[i][2];
+      const double rsq = dx * dx + dy * dy + dz * dz;
+      if (rsq > data.cutoff * data.cutoff) continue;
+      const int species = mapping.model_index[atom->type[j] - 1];
+      if (counts[species] >= data.max_neighbor)
+        error->one(FLERR, "DP neighbor capacity exceeded for model " + std::to_string(model_index) +
+                   ", atom " + std::to_string(atom->tag[i]) + ", species " + std::to_string(data.atomic_numbers[species]));
+      const size_t edge = static_cast<size_t>(center) * width + species * data.max_neighbor + counts[species]++;
+      packed.neighbors[edge] = packed.original_to_packed[j] + 1;
+      packed.displacements[edge * 4] = std::sqrt(rsq);
+      packed.displacements[edge * 4 + 1] = dx;
+      packed.displacements[edge * 4 + 2] = dy;
+      packed.displacements[edge * 4 + 3] = dz;
+      min_rsq = std::min(min_rsq, rsq);
     }
+  }
+  double global_min;
+  MPI_Allreduce(&min_rsq, &global_min, 1, MPI_DOUBLE, MPI_MIN, world);
+  if (global_min < 0.61) error->all(FLERR, "DP: there are two active atoms too close");
+  return packed;
+}
 
-    MPI_Allreduce(&min_dR, &min_dR_all, 1, MPI_DOUBLE, MPI_MIN, world);
-
-    if (min_dR_all < 0.61) {
-        if (me == 0) {
-            std::cout << "ERROR: there are two atoms too close, min_dR_all = " << min_dR_all << std::endl;
-        }
-        error->universe_all(FLERR, "there are two atoms too close");
+void PairDP::add_peratom_virial(const PackedData &packed, int width, const torch::Tensor &gradient)
+{
+  const double *g = gradient.data_ptr<double>();
+  const int a[6] = {0, 1, 2, 0, 0, 1};
+  const int b[6] = {0, 1, 2, 1, 2, 2};
+  for (size_t edge = 0; edge < packed.neighbors.size(); ++edge) {
+    if (!packed.neighbors[edge]) continue;
+    const int i = packed.packed_to_original[edge / width];
+    const int j = packed.packed_to_original[packed.neighbors[edge] - 1];
+    const double *d = &packed.displacements[edge * 4];
+    const double *ge = &g[edge * 4];
+    double q[3];
+    // Radius and Cartesian channels are independent model inputs. Chain the radius
+    // derivative back to physical Cartesian displacements before tallying virial.
+    for (int k = 0; k < 3; ++k) q[k] = ge[k + 1] + ge[0] * d[k + 1] / d[0];
+    for (int k = 0; k < 6; ++k) {
+      const double value = -0.5 * d[a[k] + 1] * q[b[k]];
+      vatom[i][k] += value;
+      vatom[j][k] += value;
     }
-    return std::make_tuple(std::move(imagetype_map), std::move(neighbor_list), std::move(dR_neigh));
-    // return std::make_tuple(imagetype, imagetype_map, neighbor_list, dR_neigh);
+  }
+  // ComputeStressAtom reverses ghost virial contributions; do not reverse here.
 }
 
 void PairDP::compute(int eflag, int vflag)
 {
-    if (eflag || vflag) ev_setup(eflag, vflag);
-    
-    // int newton_pair = force->newton_pair;
-    int ff_idx;
-    int nlocal = atom->nlocal;
-    int current_timestep = update->ntimestep;
-    // int total_timestep = update->laststep;
-    // bool calc_virial_from_mlff = false;
-    // bool calc_egroup_from_mlff = false;
-    int ntypes = atom->ntypes;
-    int nghost = atom->nghost;
-    int n_all = nlocal + nghost;
-    // int inum, jnum, itype, jtype;
-    if (num_ff > 1) {
-        grow_memory(n_all);
+  ev_init(eflag, vflag);
+  const int nall = atom->nlocal + atom->nghost;
+  const bool deviation = num_ff > 1 && update->ntimestep % out_freq == 0;
+  if (deviation) {
+    grow_memory(nall);
+    for (int ff = 0; ff < num_ff; ++ff)
+      for (int i = 0; i < nall; ++i) {
+        e_atom_n[ff][i] = 0.0;
+        for (int k = 0; k < 3; ++k) f_n[ff][i][k] = 0.0;
+      }
+  }
+  for (int ff = 0; ff < num_ff; ++ff) {
+    if (ff && !deviation) continue;
+    const auto packed = generate_neighdata(ff);
+    // Empty ranks still perform neighbor checks and all deviation collectives.
+    if (!packed.nlocal) continue;
+    const int width = static_cast<int>(model_data[ff].atomic_numbers.size()) * model_data[ff].max_neighbor;
+    auto ints = torch::TensorOptions().dtype(torch::kInt);
+    auto doubles = torch::TensorOptions().dtype(torch::kFloat64);
+    auto neighbors = torch::from_blob(const_cast<int *>(packed.neighbors.data()), {1, packed.nlocal, width}, ints).to(device);
+    auto types = torch::from_blob(const_cast<int *>(packed.center_types.data()), {packed.nlocal}, ints).to(device);
+    auto species = torch::from_blob(active_species.data(), {static_cast<int64_t>(active_species.size())}, ints).to(device);
+    auto dr = torch::from_blob(const_cast<double *>(packed.displacements.data()), {1, packed.nlocal, width, 4}, doubles).to(device);
+    if (ff == 0 && vflag_atom) dr.set_requires_grad(true);
+    try {
+      auto output = modules[ff].forward({neighbors, types, species, dr, packed.nghost}).toTuple();
+      if (output->elements().size() < 5) throw std::runtime_error("DP output must contain Etot, Ei, Force, Egroup and Virial");
+      auto energy = output->elements()[0].toTensor();
+      auto ei = output->elements()[1].toTensor().to(torch::kCPU).contiguous();
+      auto force_tensor = output->elements()[2].toTensor().to(torch::kCPU).contiguous();
+      auto model_virial = output->elements()[4].toTensor().to(torch::kCPU).contiguous();
+      if (energy.numel() != 1 || ei.dim() != 2 || ei.size(0) != 1 || ei.size(1) != packed.nlocal ||
+          force_tensor.dim() != 3 || force_tensor.size(0) != 1 ||
+          force_tensor.size(1) != static_cast<int64_t>(packed.packed_to_original.size()) || force_tensor.size(2) != 3 ||
+          model_virial.numel() != 9)
+        throw std::runtime_error("Invalid DP output tensor dimensions");
+      const double *fp = force_tensor.data_ptr<double>();
+      const double *ep = ei.data_ptr<double>();
+      for (size_t p = 0; p < packed.packed_to_original.size(); ++p) {
+        const int i = packed.packed_to_original[p];
+        for (int k = 0; k < 3; ++k) {
+          if (ff == 0) atom->f[i][k] += fp[p * 3 + k];
+          if (deviation) f_n[ff][i][k] = fp[p * 3 + k];
+        }
+        if (static_cast<int>(p) < packed.nlocal) {
+          if (ff == 0 && eflag_atom) eatom[i] += ep[p];
+          if (deviation) e_atom_n[ff][i] = ep[p];
+        }
+      }
+      if (ff == 0) {
+        if (eflag_global) eng_vdwl += energy.item<double>();
+        if (vflag_global) {
+          const double *vp = model_virial.data_ptr<double>();
+          const int components[6] = {0, 4, 8, 1, 2, 5};
+          for (int k = 0; k < 6; ++k) virial[k] += vp[components[k]];
+        }
+        if (vflag_atom) {
+          try {
+            auto gradients = torch::autograd::grad({energy.sum()}, {dr});
+            if (gradients.empty() || !gradients[0].defined()) throw std::runtime_error("undefined ImageDR gradient");
+            auto gradient = gradients[0].to(torch::kCPU).contiguous();
+            add_peratom_virial(packed, width, gradient);
+          } catch (const std::exception &e) {
+            error->one(FLERR, "DP per-atom virial requires a differentiable Etot/ImageDR graph: " + std::string(e.what()));
+          }
+        }
+      }
+    } catch (const std::exception &e) {
+      error->one(FLERR, "DP model evaluation failed: " + std::string(e.what()));
     }
-    // bool is_build_neighbor = false;
-
-    double *virial = force->pair->virial;
-    double **f = atom->f;
-    // for dp  from jitscript
-    if (model_type == 0) {
-
-        int inum = list->inum;
-        // double **x = atom->x;
-        // int *type = atom->type;
-        // auto t4 = std::chrono::high_resolution_clock::now();
-        std::vector<int> imagetype_map, neighbor_list, neighbor_type_list;
-        std::vector<double> dR_neigh;
-
-        if (model_name == "DP") {
-            std::tie(imagetype_map, neighbor_list, dR_neigh) = generate_neighdata();
-        }
-        if (inum == 0) return;
-        // auto t5 = std::chrono::high_resolution_clock::now();
-        auto int_tensor_options = torch::TensorOptions().dtype(torch::kInt);
-        auto float_tensor_options = torch::TensorOptions().dtype(torch::kFloat64);
-        torch::Tensor imagetype_map_tensor = torch::from_blob(imagetype_map.data(), {inum}, int_tensor_options).to(device);
-        torch::Tensor neighbor_list_tensor = torch::from_blob(neighbor_list.data(), {1, inum, max_neighbor * model_ntypes}, int_tensor_options).to(device);
-        torch::Tensor dR_neigh_tensor = torch::from_blob(dR_neigh.data(), {1, inum, max_neighbor * model_ntypes, 4}, float_tensor_options).to(device,dtype);
-        torch::Tensor atom_type_tensor = torch::from_blob(atom_types.data(), {ntypes}, int_tensor_options).to(device);
-        
-        torch::Tensor neighbor_type_list_tensor;
-        // auto t6 = std::chrono::high_resolution_clock::now();
-        /*
-        do forward for 4 models
-        only 1 is used for MD
-        1, 2, 3, 4 all for the deviation
-        */
-        for (ff_idx = 0; ff_idx < num_ff; ff_idx++) {
-            if (ff_idx > 0 && (current_timestep % out_freq != 0)) continue;
-            torch::Tensor Force;
-            torch::Tensor Ei;
-            torch::Tensor Etot;
-            torch::Tensor Virial;
-            if (model_name == "DP") {
-                auto output = modules[ff_idx].forward({neighbor_list_tensor, imagetype_map_tensor, atom_type_tensor, dR_neigh_tensor, nghost}).toTuple();
-                Force = output->elements()[2].toTensor().to(torch::kCPU);
-                Ei = output->elements()[1].toTensor().to(torch::kCPU);
-                if (ff_idx == 0) {
-                    Etot = output->elements()[0].toTensor().to(torch::kCPU);
-                    Virial = output->elements()[4].toTensor().to(torch::kCPU);            
-                }
-            }
-            auto F_ptr = Force.accessor<double, 3>();
-            auto Ei_ptr = Ei.accessor<double, 2>();
-
-            if (num_ff > 1 && (current_timestep % out_freq == 0)) {
-                for (int i = 0; i < inum + nghost; i++)
-                {
-                    // f_n[ff_idx][i][0] = Force[0][i][0].item<double>();
-                    // f_n[ff_idx][i][1] = Force[0][i][1].item<double>();
-                    // f_n[ff_idx][i][2] = Force[0][i][2].item<double>();
-                    f_n[ff_idx][i][0] = F_ptr[0][i][0];
-                    f_n[ff_idx][i][1] = F_ptr[0][i][1];
-                    f_n[ff_idx][i][2] = F_ptr[0][i][2];
-                }
-                for (int ii = 0; ii < inum; ii++) {
-                    // e_atom_n[ff_idx][ii] = Ei[0][ii].item<double>();
-                    e_atom_n[ff_idx][ii] = Ei_ptr[0][ii];
-                }
-            }
-
-            if (ff_idx == 0) {
-                // Etot = output->elements()[0].toTensor().to(torch::kCPU);
-                // Virial = output->elements()[4].toTensor().to(torch::kCPU);
-                // if (output->elements()[4].isTensor()) {
-                //     calc_virial_from_mlff = true;
-                //     torch::Tensor Virial = output->elements()[4].toTensor().to(torch::kCPU);
-                // } else
-                //     auto Virial = output->elements()[4];
-                // get force
-
-                // auto F_ptr = Force.accessor<double, 3>();
-                // auto Ei_ptr = Ei.accessor<double, 2>();
-                auto V_ptr = Virial.accessor<double, 2>();
-
-                for (int i = 0; i < inum + nghost; i++)
-                {
-                    f[i][0] = F_ptr[0][i][0];
-                    f[i][1] = F_ptr[0][i][1];
-                    f[i][2] = F_ptr[0][i][2];
-                }
-
-                virial[0] = V_ptr[0][0];    // xx
-                virial[1] = V_ptr[0][4];    // yy
-                virial[2] = V_ptr[0][8];    // zz
-                virial[3] = V_ptr[0][1];    // xy
-                virial[4] = V_ptr[0][2];    // xz
-                virial[5] = V_ptr[0][5];    // yz
-
-                // get energy
-                if (eflag) eng_vdwl = Etot[0][0].item<double>();
-
-                if (eflag_atom)
-                {
-                    for (int ii = 0; ii < inum; ii++) {
-                        eatom[ii] = Ei_ptr[0][ii];
-                    }
-                }
-                // If virial needed calculate via F dot r.
-                // if (vflag_fdotr) virial_fdotr_compute();
-            }
-        }
-    } // if model_type == 0
-    
-    // for deviation of multi models
-    if (num_ff > 1 && (current_timestep % out_freq == 0)) {
-        // calculate model deviation with Force
-        std::tuple<double, double, double, double, double, double> result = calc_max_error(f_n, e_atom_n);
-
-        double avg_f_err, max_f_err, min_f_err, avg_ei_err, max_ei_err, min_ei_err;
-        double glb_avg_f_err, glb_max_f_err, glb_min_f_err, glb_avg_ei_err, glb_max_ei_err, glb_min_ei_err;
-
-        avg_f_err = std::get<0>(result);
-        max_f_err = std::get<1>(result);
-        min_f_err = std::get<2>(result);
-        avg_ei_err = std::get<3>(result);
-        max_ei_err = std::get<4>(result);
-        min_ei_err = std::get<5>(result);
-
-        // max_err = result.first;
-        // max_err_ei = result.second;
-
-        MPI_Allreduce(&max_f_err, &glb_max_f_err, 1, MPI_DOUBLE, MPI_MAX, world);
-        MPI_Allreduce(&min_f_err, &glb_min_f_err, 1, MPI_DOUBLE, MPI_MIN, world);
-        MPI_Allreduce(&avg_f_err, &glb_avg_f_err, 1, MPI_DOUBLE, MPI_SUM, world);
-
-        MPI_Allreduce(&max_ei_err, &glb_max_ei_err, 1, MPI_DOUBLE, MPI_MAX, world);
-        MPI_Allreduce(&min_ei_err, &glb_min_ei_err, 1, MPI_DOUBLE, MPI_MIN, world);
-        MPI_Allreduce(&avg_ei_err, &glb_avg_ei_err, 1, MPI_DOUBLE, MPI_SUM, world);
-
-        if (atom->natoms > 0) {
-            glb_avg_f_err /= double(atom->natoms);
-            glb_avg_ei_err /= double(atom->natoms);
-        }
-
-        max_err_list.push_back(glb_max_f_err);
-        max_err_ei_list.push_back(glb_max_ei_err);
-
-        if (current_timestep % out_freq == 0) {
-            if (me == 0) {
-                // fprintf(explrError_fp, "%9d %16.9f %16.9f\n", (max_err_list.size()-1)*out_freq, global_max_err, global_max_err_ei);
-                fprintf(explrError_fp, "%9d %16.9f %16.9f %16.9f %16.9f %16.9f %16.9f\n", 
-                            current_timestep, glb_avg_f_err, glb_min_f_err, glb_max_f_err, 
-                                glb_avg_ei_err, glb_min_ei_err, glb_max_ei_err);
-                fflush(explrError_fp);
-            } 
-        }
+  }
+  if (deviation) {
+    const auto result = calc_max_error();
+    const double local_sum[2] = {std::get<0>(result), std::get<3>(result)};
+    const double local_max[2] = {std::get<1>(result), std::get<4>(result)};
+    const double local_min[2] = {std::get<2>(result), std::get<5>(result)};
+    double sum[2], maximum[2], minimum[2];
+    MPI_Allreduce(local_sum, sum, 2, MPI_DOUBLE, MPI_SUM, world);
+    MPI_Allreduce(local_max, maximum, 2, MPI_DOUBLE, MPI_MAX, world);
+    MPI_Allreduce(local_min, minimum, 2, MPI_DOUBLE, MPI_MIN, world);
+    bigint active_local = 0, active_global;
+    for (int i = 0; i < atom->nlocal; ++i)
+      if (model_data[0].mapping.active[atom->type[i] - 1]) ++active_local;
+    MPI_Allreduce(&active_local, &active_global, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    for (int k = 0; k < 2; ++k) {
+      if (active_global) sum[k] /= static_cast<double>(active_global);
+      else sum[k] = maximum[k] = minimum[k] = 0.0;
     }
-    
-    // std::cout << "t4 " << (t5 - t4).count() * 0.000001 << "\tms" << std::endl;
-    // std::cout << "t5 " << (t6 - t5).count() * 0.000001 << "\tms" << std::endl;
-    // std::cout << "t6 " << (t7 - t6).count() * 0.000001 << "\tms" << std::endl;
+    if (me == 0) {
+      fprintf(explrError_fp, "%9lld %16.9f %16.9f %16.9f %16.9f %16.9f %16.9f\n",
+              static_cast<long long>(update->ntimestep), sum[0], minimum[0], maximum[0], sum[1], minimum[1], maximum[1]);
+      fflush(explrError_fp);
+    }
+  }
+}
+
+void PairDP::grow_memory(int nall)
+{
+  if (nall <= nmax) return;
+  nmax = std::max(nall, atom->nmax);
+  memory->grow(f_n, num_ff, nmax, 3, "pair_dp:f_n");
+  memory->grow(e_atom_n, num_ff, nmax, "pair_dp:e_atom_n");
+}
+
+int PairDP::pack_reverse_comm(int n, int first, double *buf)
+{
+  int m = 0;
+  for (int i = first; i < first + n; ++i)
+    for (int k = 0; k < 3; ++k) buf[m++] = f_n[p_ff_idx][i][k];
+  return m;
+}
+
+void PairDP::unpack_reverse_comm(int n, int *list, double *buf)
+{
+  int m = 0;
+  for (int i = 0; i < n; ++i)
+    for (int k = 0; k < 3; ++k) f_n[p_ff_idx][list[i]][k] += buf[m++];
+}
+
+std::tuple<double, double, double, double, double, double> PairDP::calc_max_error()
+{
+  for (int ff = 0; ff < num_ff; ++ff) {
+    p_ff_idx = ff;
+    comm->reverse_comm(this);
+  }
+  double sum_f = 0.0, max_f = 0.0, min_f = std::numeric_limits<double>::infinity();
+  double sum_e = 0.0, max_e = 0.0, min_e = std::numeric_limits<double>::infinity();
+  for (int i = 0; i < atom->nlocal; ++i) {
+    if (!model_data[0].mapping.active[atom->type[i] - 1]) continue;
+    double mean_f[3] = {0, 0, 0}, mean_e = 0.0;
+    for (int ff = 0; ff < num_ff; ++ff) {
+      for (int k = 0; k < 3; ++k) mean_f[k] += f_n[ff][i][k] / num_ff;
+      mean_e += e_atom_n[ff][i] / num_ff;
+    }
+    double variance_f = 0.0, variance_e = 0.0;
+    for (int ff = 0; ff < num_ff; ++ff) {
+      for (int k = 0; k < 3; ++k) variance_f += std::pow(f_n[ff][i][k] - mean_f[k], 2) / num_ff;
+      variance_e += std::pow(e_atom_n[ff][i] - mean_e, 2) / num_ff;
+    }
+    const double df = std::sqrt(variance_f), de = std::sqrt(variance_e);
+    sum_f += df; max_f = std::max(max_f, df); min_f = std::min(min_f, df);
+    sum_e += de; max_e = std::max(max_e, de); min_e = std::min(min_e, de);
+  }
+  return std::make_tuple(sum_f, max_f, min_f, sum_e, max_e, min_e);
 }

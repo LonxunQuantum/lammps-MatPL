@@ -924,7 +924,7 @@ void find_descriptor_for_lammps(
   int* g_NN,
   int** g_NL,
   int* g_type,
-  std::vector<int> map_atom_type_idx,
+  const std::vector<int>& map_atom_type_idx,
   double** g_pos,
   double* g_Fp,
   double* g_sum_fxyz,
@@ -936,10 +936,13 @@ void find_descriptor_for_lammps(
   for (int ii = 0; ii < N; ++ii) {
     int n1 = g_ilist[ii];
     int t1 = map_atom_type_idx[g_type[n1] - 1];
+    if (t1 < 0) continue; // NULL centers contribute nothing.
     double q[MAX_DIM] = {0.0};
 
     for (int i1 = 0; i1 < g_NN[n1]; ++i1) {
       int n2 = g_NL[n1][i1];
+      int t2 = map_atom_type_idx[g_type[n2] - 1];
+      if (t2 < 0) continue;
       double r12[3] = {
         g_pos[n2][0] - g_pos[n1][0], g_pos[n2][1] - g_pos[n1][1], g_pos[n2][2] - g_pos[n1][2]};
 
@@ -948,7 +951,6 @@ void find_descriptor_for_lammps(
         continue;
       }
       double d12 = sqrt(d12sq);
-      int t2 = map_atom_type_idx[g_type[n2] - 1]; // from LAMMPS to NEP convention
 
       double fc12;
       find_fc(paramb.rc_radial, paramb.rcinv_radial, d12, fc12);
@@ -979,6 +981,8 @@ void find_descriptor_for_lammps(
       double s[NUM_OF_ABC] = {0.0};
       for (int i1 = 0; i1 < g_NN[n1]; ++i1) {
         int n2 = g_NL[n1][i1];
+        int t2 = map_atom_type_idx[g_type[n2] - 1];
+        if (t2 < 0) continue;
         double r12[3] = {
           g_pos[n2][0] - g_pos[n1][0], g_pos[n2][1] - g_pos[n1][1], g_pos[n2][2] - g_pos[n1][2]};
 
@@ -987,7 +991,6 @@ void find_descriptor_for_lammps(
           continue;
         }
         double d12 = sqrt(d12sq);
-        int t2 = map_atom_type_idx[g_type[n2] - 1]; // from LAMMPS to NEP convention
 
         double fc12;
         find_fc(paramb.rc_angular, paramb.rcinv_angular, d12, fc12);
@@ -1072,7 +1075,7 @@ void find_force_radial_for_lammps(
   int* g_NN,
   int** g_NL,
   int* g_type,
-  std::vector<int> map_atom_type_idx,
+  const std::vector<int>& map_atom_type_idx,
   double** g_pos,
   double* g_Fp,
   double** g_force,
@@ -1084,9 +1087,11 @@ void find_force_radial_for_lammps(
   for (int ii = 0; ii < N; ++ii) {
     int n1 = g_ilist[ii];
     int t1 = map_atom_type_idx[g_type[n1] - 1]; // from LAMMPS to NEP convention
+    if (t1 < 0) continue;
     for (int i1 = 0; i1 < g_NN[n1]; ++i1) {
       int n2 = g_NL[n1][i1];
-      int t2 = map_atom_type_idx[g_type[n2] - 1]; // from LAMMPS to NEP convention
+      int t2 = map_atom_type_idx[g_type[n2] - 1];
+      if (t2 < 0) continue;
       double r12[3] = {
         g_pos[n2][0] - g_pos[n1][0], g_pos[n2][1] - g_pos[n1][1], g_pos[n2][2] - g_pos[n1][2]};
 
@@ -1170,7 +1175,7 @@ void find_force_angular_for_lammps(
   int* g_NN,
   int** g_NL,
   int* g_type,
-  std::vector<int> map_atom_type_idx,
+  const std::vector<int>& map_atom_type_idx,
   double** g_pos,
   double* g_Fp,
   double* g_sum_fxyz,
@@ -1182,6 +1187,8 @@ void find_force_angular_for_lammps(
 {
   for (int ii = 0; ii < N; ++ii) {
     int n1 = g_ilist[ii];
+    int t1 = map_atom_type_idx[g_type[n1] - 1];
+    if (t1 < 0) continue;
     double Fp[MAX_DIM_ANGULAR] = {0.0};
     double sum_fxyz[NUM_OF_ABC * MAX_NUM_N];
     for (int d = 0; d < paramb.dim_angular; ++d) {
@@ -1191,10 +1198,11 @@ void find_force_angular_for_lammps(
       sum_fxyz[d] = g_sum_fxyz[d * nlocal + n1];
     }
 
-    int t1 = map_atom_type_idx[g_type[n1] - 1]; // from LAMMPS to NEP convention
 
     for (int i1 = 0; i1 < g_NN[n1]; ++i1) {
       int n2 = g_NL[n1][i1];
+      int t2 = map_atom_type_idx[g_type[n2] - 1];
+      if (t2 < 0) continue;
       double r12[3] = {
         g_pos[n2][0] - g_pos[n1][0], g_pos[n2][1] - g_pos[n1][1], g_pos[n2][2] - g_pos[n1][2]};
 
@@ -1203,7 +1211,6 @@ void find_force_angular_for_lammps(
         continue;
       }
       double d12 = sqrt(d12sq);
-      int t2 = map_atom_type_idx[g_type[n2] - 1]; // from LAMMPS to NEP convention
       double f12[3] = {0.0};
       double fc12, fcp12;
       find_fc_and_fcp(paramb.rc_angular, paramb.rcinv_angular, d12, fc12, fcp12);
@@ -1285,7 +1292,7 @@ void find_force_ZBL_for_lammps(
   int* g_NN,
   int** g_NL,
   int* g_type,
-  std::vector<int> map_atom_type_idx,
+  const std::vector<int>& map_atom_type_idx,
   double** g_pos,
   double** g_force,
   double g_total_virial[6],
@@ -1298,10 +1305,13 @@ void find_force_ZBL_for_lammps(
   for (int ii = 0; ii < N; ++ii) {
     int n1 = g_ilist[ii];
     int type1 = map_atom_type_idx[g_type[n1] - 1];
+    if (type1 < 0) continue;
     int zi = zbl.atomic_numbers[type1]; // from LAMMPS to NEP convention
     double pow_zi = pow(zi, 0.23);
     for (int i1 = 0; i1 < g_NN[n1]; ++i1) {
       int n2 = g_NL[n1][i1];
+      int type2 = map_atom_type_idx[g_type[n2] - 1];
+      if (type2 < 0) continue;
       double r12[3] = {
         g_pos[n2][0] - g_pos[n1][0], g_pos[n2][1] - g_pos[n1][1], g_pos[n2][2] - g_pos[n1][2]};
 
@@ -1313,7 +1323,6 @@ void find_force_ZBL_for_lammps(
       double d12 = sqrt(d12sq);
       double d12inv = 1.0 / d12;
       double f, fp;
-      int type2 = map_atom_type_idx[g_type[n2] - 1];
       int zj = zbl.atomic_numbers[type2]; // from LAMMPS to NEP convention
       double a_inv = (pow_zi + pow(zj, 0.23)) * 2.134563;
       double zizj = K_C_SP * zi * zj;

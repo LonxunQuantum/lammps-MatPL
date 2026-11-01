@@ -729,6 +729,7 @@ void NEPKK::set_atom_type_map(int type_nums, const int* type_list){
     exit(1);
   }
   configured_type_map_.assign(type_list, type_list + type_nums);
+  has_null_ = std::find(configured_type_map_.begin(), configured_type_map_.end(), -1) != configured_type_map_.end();
   atom_type_map.resize(type_nums);
   atom_type_map.copy_from_host(type_list);
   type_map_initialized_ = true;
@@ -886,7 +887,53 @@ void NEPKK::compute(
     int vflag_atom,         // virial peratom flag
     int cvflag_atom,
     int nall,               // nlocal + nghost
-    int inum, 
+    int inum,
+    int nlocal,
+    int max_J_neigh,          // row nums of firstneigh
+    int max_I_neigh,          // col nums of firstneigh -> j = firstneigh[i + num_neighs * jj] & NEIGHMASK
+    int* itype,                 //atoms' type,the len is [n_all]
+    int* ilist,                 // atom i list
+    int* numneigh,              // the neighbor nums of each i, [inum]
+    int* firstneigh,            // the neighbor list of each i, [inum * NM]
+    double* position,           // postion of atoms x, [n_all * 3]
+    double* potential_per_atom_lmp,  // the output of ei
+    double* potential_per_atom_copy, // the output of ei
+    double* force_per_atom_lmp,      // the output of force
+    double* force_per_atom_copy,
+    double* virial_per_atom,
+    double* cvirial_per_atom,
+    const double* box_h,
+    const char* kspace_method,
+    long long natoms_global,
+    int mpi_size,
+    NEPKKAllreduceDouble allreduce_double,
+    void* allreduce_context,
+    double* h_etot_virial_global // len=7: etot + 6 virials
+) {
+  if (has_null_) compute_impl<true>(
+    eflag_global, eflag_atom, vflag_either, vflag_global, vflag_atom, cvflag_atom, nall, inum,
+    nlocal, max_J_neigh, max_I_neigh, itype, ilist, numneigh, firstneigh, position,
+    potential_per_atom_lmp, potential_per_atom_copy, force_per_atom_lmp, force_per_atom_copy,
+    virial_per_atom, cvirial_per_atom, box_h, kspace_method, natoms_global, mpi_size,
+    allreduce_double, allreduce_context, h_etot_virial_global);
+  else compute_impl<false>(
+    eflag_global, eflag_atom, vflag_either, vflag_global, vflag_atom, cvflag_atom, nall, inum,
+    nlocal, max_J_neigh, max_I_neigh, itype, ilist, numneigh, firstneigh, position,
+    potential_per_atom_lmp, potential_per_atom_copy, force_per_atom_lmp, force_per_atom_copy,
+    virial_per_atom, cvirial_per_atom, box_h, kspace_method, natoms_global, mpi_size,
+    allreduce_double, allreduce_context, h_etot_virial_global);
+}
+
+template <bool HAS_NULL>
+void NEPKK::compute_impl(
+    int eflag_global,       // energy_total flag
+    int eflag_atom,         // ei peratom flag
+    int vflag_either,       // = bool(vfalg_atom or vflag_global)
+    int vflag_global,       // virial_global flag
+    int vflag_atom,         // virial peratom flag
+    int cvflag_atom,
+    int nall,               // nlocal + nghost
+    int inum,
     int nlocal,
     int max_J_neigh,          // row nums of firstneigh
     int max_I_neigh,          // col nums of firstneigh -> j = firstneigh[i + num_neighs * jj] & NEIGHMASK
@@ -921,7 +968,7 @@ void NEPKK::compute(
   double* force_per_atom;
   int vatom_num = 6;
   if (ff_index == 0) {
-    force_per_atom = force_per_atom_lmp; // after calc, copy to f_copy
+    force_per_atom = force_per_atom_copy ? force_per_atom_copy : force_per_atom_lmp;
     if (cvflag_atom) {
       vatom_num = 9;
       cv_per_atom = cvirial_per_atom; // 9 分量的virial, 计算完毕后，若果vflag_atom is true && ff_idx is 0 需要复制结果到6分量virail
@@ -937,6 +984,14 @@ void NEPKK::compute(
     vflag_global = 0;       // virial_global flag
     vflag_atom   = 0;       // virial peratom flag
     cvflag_atom  = 0;
+  }
+  if (inum == 0 && paramb.charge_mode == 0) {
+    std::fill(h_etot_virial_global, h_etot_virial_global + 10, 0.0);
+    if (eflag_atom && ff_index == 0 && nlocal)
+      CHECK_CUDA_NEP(cudaMemset(potential_per_atom_lmp, 0, nlocal * sizeof(double)));
+    if (potential_per_atom_copy && nlocal)
+      CHECK_CUDA_NEP(cudaMemset(potential_per_atom_copy, 0, nlocal * sizeof(double)));
+    return;
   }
   reset_nep_data(inum, nlocal, nall, vflag_either);// 初始化NEP辅助数组
   NEPKK_Box box;
@@ -982,7 +1037,7 @@ void NEPKK::compute(
   //增大到64后，占据多了，66.6%，但是速度变慢了一倍。因为驻留线程多了之后造成了更高的内存带宽压力
   if (USE_SHAREMEM_C2) {//把两体项系数C全部load入共享内存 Ntype*Ntype*(Nmax+1)*(Nbase+1) * 4-float
     size_t shared_mem_size = nep_data.param_c2.size() * sizeof(NEP_FLOAT);
-    calc_2b_descriptor_sharemem<<<(inum - 1) / BLOCK_SIZE32 + 1, BLOCK_SIZE32, shared_mem_size>>>(
+    calc_2b_descriptor_sharemem<HAS_NULL><<<(inum - 1) / BLOCK_SIZE32 + 1, BLOCK_SIZE32, shared_mem_size>>>(
       paramb,
       nep_data.param_c2.data(),
       inum,
@@ -999,7 +1054,7 @@ void NEPKK::compute(
       nep_data.Fp.data()); //临时存储特征值
     CUDA_CHECK_KERNEL
   } else {// 不使用共享内存的版本，系数C直接从全局内存中读取
-    calc_2b_descriptor<<<(inum - 1) / BLOCK_SIZE32 + 1, BLOCK_SIZE32>>>(
+    calc_2b_descriptor<HAS_NULL><<<(inum - 1) / BLOCK_SIZE32 + 1, BLOCK_SIZE32>>>(
       paramb,
       nep_data.param_c2.data(),
       inum,
@@ -1029,7 +1084,7 @@ void NEPKK::compute(
 
   if (USE_SHAREMEM_C3) {// 把多体系数项C全部load到shared memory中
     size_t shared_mem_size = nep_data.param_c3.size() * sizeof(NEP_FLOAT);
-    calc_3b_descriptor_sharemem<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, shared_mem_size>>>(
+    calc_3b_descriptor_sharemem<HAS_NULL><<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, shared_mem_size>>>(
       paramb,
       nep_data.param_c3.data(),
       inum,
@@ -1043,7 +1098,7 @@ void NEPKK::compute(
       nep_data.sum_fxyz.data());
     CUDA_CHECK_KERNEL
   } else {// 不使用共享内存的版本，系数C直接从全局内存中读取
-    calc_3b_descriptor<<<(inum - 1) / BLOCK_SIZE32 + 1, BLOCK_SIZE32>>>(
+    calc_3b_descriptor<HAS_NULL><<<(inum - 1) / BLOCK_SIZE32 + 1, BLOCK_SIZE32>>>(
       paramb,
       nep_data.param_c3.data(),
       inum,
@@ -1060,7 +1115,7 @@ void NEPKK::compute(
 
   const size_t ann_q_smem = static_cast<size_t>(annmb.dim) *
     BLOCK_SIZE64 * sizeof(NEP_FLOAT);
-  apply_ann_forward<<<
+  apply_ann_forward<HAS_NULL><<<
     (inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, ann_q_smem>>>(
     paramb,
     annmb,
@@ -1079,7 +1134,7 @@ void NEPKK::compute(
   const int ann_alpha_outputs = paramb.charge_mode == 2 ? 2 : 1;
   const size_t ann_alpha_smem = static_cast<size_t>(annmb.num_neurons1) *
     ann_atoms_per_block * ann_alpha_outputs * sizeof(NEP_FLOAT);
-  apply_ann_derivative<<<
+  apply_ann_derivative<HAS_NULL><<<
     (inum + ann_atoms_per_block - 1) / ann_atoms_per_block,
     ann_derivative_threads,
     ann_alpha_smem>>>(
@@ -1167,7 +1222,7 @@ void NEPKK::compute(
   smem_bytes += paramb.n_max_radial_plus1 * sizeof(NEP_FLOAT);// n_max_radial_plus1 一定是小于线程块大小的
   const bool use_bwd_2b_perneigh = false;
   if (paramb.charge_mode != 2 && use_bwd_2b_perneigh && smem_bytes < SHAREMEM_32) {
-    backward_force_2b_perneigh<<<inum, BLOCK_SIZE64, smem_bytes>>>(
+    backward_force_2b_perneigh<HAS_NULL><<<inum, BLOCK_SIZE64, smem_bytes>>>(
         vflag_either,
         cvflag_atom,
         vatom_num,
@@ -1218,7 +1273,7 @@ void NEPKK::compute(
         cv_per_atom
       );
     } else {
-      backward_force_2b_nep<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, bwd_2b_smem>>>(
+      backward_force_2b_nep<HAS_NULL><<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, bwd_2b_smem>>>(
         vflag_either,
         cvflag_atom,
         vatom_num,
@@ -1247,7 +1302,7 @@ void NEPKK::compute(
     USE_SHAREMEM_C3 && compact_c3_bytes + bwd_3b_fn_bytes < SHAREMEM_32;
   const size_t bwd_3b_smem = bwd_3b_fn_bytes +
     (use_bwd_3b_shared_c3 ? compact_c3_bytes : 0);
-  backward_force_3b_dqnl<<<
+  backward_force_3b_dqnl<HAS_NULL><<<
     (inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64, bwd_3b_smem>>>(
       paramb,
       nep_data.param_c3.data(),
@@ -1290,7 +1345,7 @@ void NEPKK::compute(
   cudaDeviceSynchronize(); 
 
   if (zbl.enabled) {
-    backward_force_ZBL<<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>(
+    backward_force_ZBL<HAS_NULL><<<(inum - 1) / BLOCK_SIZE64 + 1, BLOCK_SIZE64>>>(
       vflag_either,
       cvflag_atom,
       vatom_num,
@@ -1314,6 +1369,11 @@ void NEPKK::compute(
       force_per_atom,
       cv_per_atom,
       nep_data.potential_per_atom.data());
+    CUDA_CHECK_KERNEL
+  }
+
+  if (ff_index == 0 && cvflag_atom && vflag_atom && nall > 0) {
+    virial9To6Kernel<<<(nall + 255) / 256, 256>>>(cvirial_per_atom, virial_per_atom, nall);
     CUDA_CHECK_KERNEL
   }
 
@@ -1400,9 +1460,9 @@ void NEPKK::compute(
   }
   
   if (ff_index == 0 && force_per_atom_copy) {
-    // copy force for deviation_calculate
-    // if ff_index > 0, the force_per_atom is force_per_atom_copy
-    copyArrayKernel<<<(nall*3 + BLOCK_SIZE256 - 1) / BLOCK_SIZE256, BLOCK_SIZE256>>>(force_per_atom_copy, force_per_atom, nall*3);
+    // The isolated model-0 slice contains only NEP; add its contribution to
+    // live LAMMPS forces without importing another hybrid style into deviation.
+    addArrayKernel<<<(nall*3 + BLOCK_SIZE256 - 1) / BLOCK_SIZE256, BLOCK_SIZE256>>>(force_per_atom_lmp, force_per_atom_copy, nall*3);
     CUDA_CHECK_KERNEL
     cudaDeviceSynchronize();
   }

@@ -13,6 +13,7 @@ PairStyle(matpl/nep, PairNEP);
 #ifndef LMP_PAIR_MLFF_H
 #define LMP_PAIR_MLFF_H
 #include "nep_cpu.h"
+#include "atom_type_mapping.h"
 #include "pair.h"
 #include <iostream>
 namespace LAMMPS_NS {
@@ -34,7 +35,6 @@ namespace LAMMPS_NS {
 
         protected:
             virtual void allocate();
-            int find_atomic_number(std::string&);
         
         private:
             int me;
@@ -47,6 +47,7 @@ namespace LAMMPS_NS {
 
             // NEP3_CPU nep_cpu_model;
             std::vector<NEP3_CPU> nep_cpu_models;
+            std::vector<MatPL::AtomTypeMapping> type_mappings;
 
 
             std::vector<double> max_err_list;

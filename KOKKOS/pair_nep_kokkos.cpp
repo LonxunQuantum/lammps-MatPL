@@ -13,6 +13,7 @@
 ------------------------------------------------------------------------- */
 /* The nep KOKKOS interface enables neighboring build operations to be moved to the device side, accelerating the overall speed of MD. Author wuxingxing@pwmat.com and MatPL development team. 2026. Beijing Lonxun Quantum Co.,Ltd.*/
 #include "pair_nep_kokkos.h"
+#include "atom_type_mapping.h"
 #include "atom_kokkos.h"
 #include "atom_masks.h"
 #include "comm.h"
@@ -114,11 +115,11 @@ void PairNEPKokkos<DeviceType>::allocate()
   memory->create(setflag, n+1, n+1, "pair:setflag");
   memory->create(cutsq, n+1, n+1, "pair:cutsq");
 
-  // for (int i = 1; i <= n; i++) {
-  //   for (int j = i; j <= n; j++) {
-  //     setflag[i][j] = 0;
-  //   }
-  // }
+  for (int i = 1; i <= n; ++i)
+    for (int j = 1; j <= n; ++j) {
+      setflag[i][j] = 0;
+      cutsq[i][j] = 0.0;
+    }
 }
 /* ----------------------------------------------------------------------
    global settings
@@ -213,6 +214,7 @@ void PairNEPKokkos<DeviceType>::settings(int narg, char **arg)
     // }
     // No cudaSetDevice(device_id); Kokkos already selected the device.
   }
+  cutoff = 0.0;
   nep_gpu_models.resize(num_ff);
   for (int i=0; i < num_ff; i++) {
     std::string model_file = potential_files[i];
@@ -233,10 +235,9 @@ void PairNEPKokkos<DeviceType>::settings(int narg, char **arg)
         }
       }
     }
-    if (i == 0) {
-      cutoff = nep_gpu_models[i].paramb.rc_radial;
-      cutoffsq = cutoff * cutoff;
-    }
+    cutoff = std::max(cutoff, static_cast<double>(std::max(
+      nep_gpu_models[i].paramb.rc_radial, nep_gpu_models[i].paramb.rc_angular)));
+    cutoffsq = cutoff * cutoff;
     if (is_rank_0) {
       utils::logmesg(lmp, "NEP Kokkos potential " + model_file + " loaded successfully\n");
     }
@@ -250,39 +251,37 @@ void PairNEPKokkos<DeviceType>::settings(int narg, char **arg)
 template<class DeviceType>
 void PairNEPKokkos<DeviceType>::coeff(int narg, char **arg)
 {
+  const int ntypes = atom->ntypes;
+  if (narg != ntypes + 2)
+    error->all(FLERR, "Expected one mapping per LAMMPS atom type");
+  if (strcmp(arg[0], "*") || strcmp(arg[1], "*"))
+    error->all(FLERR, "Pair matpl/nep/kk requires pair_coeff * * followed by atom type mappings");
   if (!allocated) allocate();
-  for (int f1 = 0; f1 < num_ff; f1++) {
-    std::vector<int> atom_type_module = nep_gpu_models[f1].cpu_element_atomic_number_list;
-    std::vector<int> atom_types;
-    for (int ii = 2; ii < narg; ++ii) {
-      std::string element = utils::strdup(arg[ii]);
-      int temp = find_atomic_number(element);
-      // int temp = std::stoi(arg[ii]);
-      auto iter = std::find(atom_type_module.begin(), atom_type_module.end(), temp);   
-      if (iter != atom_type_module.end() || arg[ii] == 0)
-      {
-          int index = std::distance(atom_type_module.begin(), iter);
-          // model_atom_type_idx.push_back(index); 
-          // atom_types.push_back(temp);
-          atom_types.push_back(index);
-          // printf("=== rank %d device_id %d coeff the config atom type %d index in ff is %d\n",\
-            rank, device_id, temp, index);
-      }
-      else
-      {
-          error->all(FLERR, "This element is not included in the nep file: " + potential_files[f1]);
-      }
-    }
-    nep_gpu_models[f1].set_atom_type_map(narg-2, atom_types.data());
+  std::vector<std::string> symbols(arg + 2, arg + narg);
+  const bool any_null = std::any_of(symbols.begin(), symbols.end(),
+    [](const std::string& value) { return MatPL::lowercase(value) == "null"; });
+  if (any_null)
+    for (const auto& model : nep_gpu_models)
+      if (model.paramb.charge_mode != 0)
+        error->all(FLERR, "NULL atom type mapping is not supported for charge-enabled NEP models in this version.");
+  std::vector<MatPL::AtomTypeMapping> mappings;
+  try {
+    for (const auto& model : nep_gpu_models)
+      mappings.push_back(MatPL::build_atom_type_mapping(
+        ntypes, symbols, model.cpu_element_atomic_number_list));
+    MatPL::validate_active_masks(mappings);
+  } catch (const std::exception& exception) {
+    error->all(FLERR, exception.what());
   }
-  int ntypes = atom->ntypes;
-  // For NEP, all types are handled by the model; set all pairs
-  for (int i = 1; i <= ntypes; i++) {
-    for (int j = i; j <= ntypes; j++) {
+  gpu_type_mappings = std::move(mappings);
+  for (int model = 0; model < num_ff; ++model)
+    nep_gpu_models[model].set_atom_type_map(ntypes, gpu_type_mappings[model].model_index.data());
+  for (int i = 1; i <= ntypes; ++i)
+    for (int j = i; j <= ntypes; ++j) {
+      // Registration is independent of activity: hybrid can route NULL pairs.
       setflag[i][j] = 1;
       cutsq[i][j] = cutoffsq;
     }
-  }
 }
 
 /* ----------------------------------------------------------------------
@@ -440,14 +439,15 @@ void PairNEPKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
     d_cvatom = k_cvatom.view<DeviceType>();
     Kokkos::deep_copy(d_cvatom, 0.0);
     cvirial_per_atom_ptr = d_cvatom.data();
-  } else if (vflag_atom) {
+  }
+  if (vflag_atom) {
     if (local_maxvatom < cur_atom_max) local_maxvatom = cur_atom_max;
     memoryKK->destroy_kokkos(k_vatom, vatom);
     memoryKK->create_kokkos(k_vatom, vatom, local_maxvatom, "pair:vatom");
     d_vatom = k_vatom.view<DeviceType>();
     Kokkos::deep_copy(d_vatom, 0.0);
     virial_per_atom_ptr = d_vatom.data();
-  } else if (vflag_global) {
+  } else if (vflag_global && !cvflag_atom) {
     if (local_maxvatom_work < cur_atom_max) {
       local_maxvatom_work = cur_atom_max;
       k_vatom_work = DAT::tdual_virial_array("pair:vatom_work", local_maxvatom_work);
@@ -636,6 +636,12 @@ void PairNEPKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
     auto h_f = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), f);
     auto h_eatom = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_eatom);
     auto h_ilist = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_ilist);
+    long long local_active = 0;
+    for (int i = 0; i < inum; ++i)
+      if (gpu_type_mappings[0].active[atom->type[h_ilist(i)] - 1]) ++local_active;
+    long long global_active = 0;
+    MPI_Allreduce(&local_active, &global_active, 1, MPI_LONG_LONG, MPI_SUM, world);
+    if (!global_active) error->all(FLERR, "Cannot calculate NEP deviation: no active atoms");
 
     double glb_avg_f_err, glb_max_f_err, glb_min_f_err;
     double glb_avg_ei_err, glb_max_ei_err, glb_min_ei_err;
@@ -668,9 +674,9 @@ void PairNEPKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
     MPI_Allreduce(&avg_f_err, &glb_avg_f_err, 1, MPI_DOUBLE, MPI_SUM, world);
     MPI_Allreduce(&avg_ei_err, &glb_avg_ei_err, 1, MPI_DOUBLE, MPI_SUM, world);
 
-    if (atom->natoms > 0) {
-        glb_avg_f_err /= static_cast<double>(atom->natoms);
-        glb_avg_ei_err /= static_cast<double>(atom->natoms);
+    if (global_active > 0) {
+        glb_avg_f_err /= static_cast<double>(global_active);
+        glb_avg_ei_err /= static_cast<double>(global_active);
     } else {
         glb_avg_f_err = 0.0;
         glb_avg_ei_err = 0.0;
@@ -879,6 +885,7 @@ PairNEPKokkos<DeviceType>::calc_max_error(const int* ilist, const double* h_full
     for (int ff = 0; ff < num_ff; ++ff) {
       for (int i = 0; i < inum; ++i) {
         i_index = ilist[i];
+        if (!gpu_type_mappings[0].active[atom->type[i_index] - 1]) continue;
         int base_idx_f = ff * nall * 3 + i_index * 3;
         int base_idx_e = ff * nlocal + i_index;
 
@@ -904,14 +911,15 @@ PairNEPKokkos<DeviceType>::calc_max_error(const int* ilist, const double* h_full
     double avg_f_err = 0.0;
     double avg_ei_err = 0.0;
 
-    double min_f_err = 1e9, max_f_err = 0.0;
-    double min_ei_err = 1e9, max_ei_err = 0.0;
+    double min_f_err = std::numeric_limits<double>::infinity(), max_f_err = 0.0;
+    double min_ei_err = std::numeric_limits<double>::infinity(), max_ei_err = 0.0;
     double _tmp_f = 0.0;
     double _tmp_ei = 0.0;
 
     for (int ff = 0; ff < num_ff; ++ff) {
       for (int i = 0; i < inum; ++i) {
         i_index = ilist[i];
+        if (!gpu_type_mappings[0].active[atom->type[i_index] - 1]) continue;
         int base_idx_f = ff * nall * 3 + i_index * 3;
         int base_idx_e = ff * nlocal + i_index;
 
@@ -926,6 +934,7 @@ PairNEPKokkos<DeviceType>::calc_max_error(const int* ilist, const double* h_full
     }
 
     for (int i = 0; i < inum; ++i) {
+      if (!gpu_type_mappings[0].active[atom->type[ilist[i]] - 1]) continue;
       _tmp_f = sqrt(f_err_sq_sum[i] / num_ff);
       _tmp_ei  = sqrt(ei_err_sq_sum[i]/ num_ff);
       min_f_err = std::min(min_f_err, _tmp_f);

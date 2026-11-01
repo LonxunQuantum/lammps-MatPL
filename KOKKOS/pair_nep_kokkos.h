@@ -79,6 +79,7 @@ class PairNEPKokkos : public PairNEP {
   int global_nall = 0;
   int global_nlocal = 0;
   bool reverse_force = false;
+  std::vector<MatPL::AtomTypeMapping> gpu_type_mappings;
   std::vector<NEPKK> nep_gpu_models;  // NEP model instance
   std::vector<std::string> potential_files;
   std::string kspace_method = "ewald";

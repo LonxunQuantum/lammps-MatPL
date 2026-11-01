@@ -168,3 +168,5 @@ DOI: https://doi.org/10.26434/chemrxiv.15001665/v3
   * Zheyong Fan*, Benrui Tang, Esmée Berger, Ethan Berger, Erik Fransson, Ke Xu, Zihan Yan, Zhoulin Liu, Zichen Song, Haikuan Dong, Shunda Chen, Lei Li, Ziliang Wang, Yizhou Zhu, Julia Wiktor, Paul Erhart*, [qNEP: A Highly Efficient Neuroevolution Potential with Dynamic Charges for Large-Scale Atomistic Simulations](https://doi.org/10.1021/acs.jctc.6c00146), J. Chem. Theory Comput. 2026.
 
 * If you use the LAMMPS interface of the `NEP` class, a proper citation for LAMMPS is also suggested. 
+
+NULL atom type mappings for NEP CPU, Kokkos and DP: [usage and limitations](docs/NULL_MAPPING.md).

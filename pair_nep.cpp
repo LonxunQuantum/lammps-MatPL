@@ -18,6 +18,7 @@
 #include "domain.h"
 #include <dlfcn.h>
 #include <algorithm>
+#include <limits>
 using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
@@ -30,6 +31,7 @@ PairNEP::PairNEP(LAMMPS *lmp) : Pair(lmp)
 
     restartinfo = 0;//  set to 0 if your pair style does not store data in restart files
     manybody_flag = 1; //set to 1 if your pair style is not pair-wise additive
+    no_virial_fdotr_compute = 1; // Kernels tally the complete model virial directly.
     single_enable = 0; 
     // copymode = 0;
     // allocated = 0;
@@ -119,6 +121,8 @@ void PairNEP::settings(int narg, char** arg)
         iarg++;
     }
 
+    if (num_ff == 0) error->all(FLERR, "pair_style matpl/nep requires at least one model file");
+
     if (me == 0 and num_ff > 1) {
         explrError_fp = fopen(&explrError_fname[0], "w");
         fprintf(explrError_fp, "%9s %16s %16s %16s %16s %16s %16s\n", 
@@ -142,7 +146,10 @@ void PairNEP::settings(int narg, char** arg)
         nep_cpu_models[ff_idx].read_neptxt(model_file, is_rank_0);
         if (me == 0) printf("\nLoading txt model file:   %s\n", model_file.c_str());
     }
-    cutoff = nep_cpu_models[0].paramb.rc_radial;
+    // Every ensemble model needs its complete neighborhood, independently of model 0.
+    cutoff = 0.0;
+    for (const auto& model : nep_cpu_models)
+        cutoff = std::max(cutoff, std::max(model.paramb.rc_radial, model.paramb.rc_angular));
     // memory->create(f_n, num_ff, nmax, 3, "pair_matpl:f_n");
     // memory->create(e_atom_n, num_ff, nmax, "pair_matpl:e_atom_n");
 } 
@@ -150,97 +157,49 @@ void PairNEP::settings(int narg, char** arg)
 /* ----------------------------------------------------------------------
    set coeffs for one or more type pairs pair_coeff 
 ------------------------------------------------------------------------- */
-int PairNEP::find_atomic_number(std::string& key) {
-    std::transform(key.begin(), key.end(), key.begin(), ::tolower);
-    if (key.length() == 1) { key += " "; }
-    key.resize(2);
-
-    std::vector<std::string> element_table = {
-        "h ","he",
-        "li","be","b ","c ","n ","o ","f ","ne",
-        "na","mg","al","si","p ","s ","cl","ar",
-        "k ","ca","sc","ti","v ","cr","mn","fe","co","ni","cu",
-        "zn","ga","ge","as","se","br","kr",
-        "rb","sr","y ","zr","nb","mo","tc","ru","rh","pd","ag",
-        "cd","in","sn","sb","te","i ","xe",
-        "cs","ba","la","ce","pr","nd","pm","sm","eu","gd","tb","dy",
-        "ho","er","tm","yb","lu","hf","ta","w ","re","os","ir","pt",
-        "au","hg","tl","pb","bi","po","at","rn",
-        "fr","ra","ac","th","pa","u ","np","pu"
-    };
-
-    std::vector<std::string> element_table2 = {
-        "1 ","2 ",
-        "3 ","4 ","5 ","6 ","7 ","8 ","9 ","10",
-        "11","12","13","14","15","16","17","18",
-        "19","20","21","22","23","24","25","26","27","28","29",
-        "30","31","32","33","34","35","36",
-        "37","38","39","40","41","42","43","44","45","46","47",
-        "48","49","50","51","52","53","54",
-        "55","56","57","58","59","60","61","62","63","64","65","66",
-        "67","68","69","70","71","72","73","74","75","76","77","78",
-        "79","80","81","82","83","84","85","86",
-        "87","88","89","90","91","92","93","94",
-    };
-    
-    for (size_t i = 0; i < element_table.size(); ++i) {
-        if (element_table[i] == key) {
-            int atomic_number = i + 1;
-            return atomic_number;
-        }else if(element_table2[i] == key) {
-            int atomic_number = i + 1;
-            return atomic_number;
-        }
-    }
-
-    // if not the case
-    return -1;
-}
-
 void PairNEP::coeff(int narg, char** arg)
 {
-    if (!allocated) { allocate(); }
+    if (narg != atom->ntypes + 2)
+        error->all(FLERR, "Expected one mapping per LAMMPS atom type in pair_coeff * *");
+    if (!allocated) allocate();
 
-    // pair_coeff * * 
     int ilo, ihi, jlo, jhi;
-    utils::bounds(FLERR, arg[0], 1, atom->ntypes, ilo, ihi, error); // arg[0] = *
-    utils::bounds(FLERR, arg[1], 1, atom->ntypes, jlo, jhi, error); // arg[1] = *
+    utils::bounds(FLERR, arg[0], 1, atom->ntypes, ilo, ihi, error);
+    utils::bounds(FLERR, arg[1], 1, atom->ntypes, jlo, jhi, error);
 
+    const std::vector<std::string> symbols(arg + 2, arg + narg);
+    const bool has_null = std::any_of(symbols.begin(), symbols.end(),
+        [](const std::string& symbol) { return MatPL::lowercase(symbol) == "null"; });
+    std::vector<MatPL::AtomTypeMapping> mappings;
+    try {
+        for (int model = 0; model < num_ff; ++model) {
+            if (nep_cpu_models[model].paramb.charge_mode != 0 && has_null)
+                throw std::invalid_argument("NULL atom type mapping is not supported for charge-enabled NEP models in this version.");
+            mappings.push_back(MatPL::build_atom_type_mapping(
+                atom->ntypes, symbols, nep_cpu_models[model].element_atomic_number_list));
+        }
+        MatPL::validate_active_masks(mappings);
+    } catch (const std::invalid_argument& exception) {
+        error->all(FLERR, exception.what());
+    }
+    // Replace all entries on repeated coeff commands. Each model has its own element order.
+    type_mappings = std::move(mappings);
+    for (int model = 0; model < num_ff; ++model) {
+        nep_cpu_models[model].map_atom_types = type_mappings[model].atomic_number;
+        nep_cpu_models[model].map_atom_type_idx = type_mappings[model].model_index;
+    }
+    atom_types = type_mappings[0].atomic_number;
+    model_atom_type_idx = type_mappings[0].model_index;
+    model_ntypes = nep_cpu_models[0].element_atomic_number_list.size();
+
+    // Pair registration is independent of activity: hybrid may assign these type pairs here.
     int count = 0;
-    for(int i = ilo; i <= ihi; i++) {
-        for(int j = MAX(jlo,i); j <= jhi; j++) 
-        {
+    for (int i = ilo; i <= ihi; ++i)
+        for (int j = MAX(jlo, i); j <= jhi; ++j) {
             setflag[i][j] = 1;
-            count++;
+            ++count;
         }
-    }
-
-    std::vector<int> atom_type_module = nep_cpu_models[0].element_atomic_number_list;
-    model_ntypes = atom_type_module.size();
-    // if (ntypes > model_ntypes || ntypes != narg - 2)  // type numbers in strucutre file and in pair_coeff should be the same
-    // {
-    //     error->all(FLERR, "Element mapping is not correct, ntypes = " + std::to_string(ntypes));
-    // }
-    for (int ii = 2; ii < narg; ++ii) {
-        std::string element = utils::strdup(arg[ii]);  // LAMMPS提供的安全转换
-        int temp = find_atomic_number(element);
-        // int temp = std::stoi(arg[ii]);
-        auto iter = std::find(atom_type_module.begin(), atom_type_module.end(), temp);   
-        if (iter != atom_type_module.end() || arg[ii] == 0)
-        {
-            int index = std::distance(atom_type_module.begin(), iter);
-            model_atom_type_idx.push_back(index); 
-            atom_types.push_back(temp);
-            for(int jj=0; jj < num_ff; ++jj){
-                nep_cpu_models[jj].map_atom_types.push_back(temp);
-                nep_cpu_models[jj].map_atom_type_idx.push_back(index);
-            }
-            // std::cout<<"=== the config atom type "<< temp << " index in ff is "  << index << std::endl;
-        } else {
-            error->all(FLERR, "This element is not included in the machine learning force field");
-        }
-    }
-   if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients");
+    if (count == 0) error->all(FLERR, "Incorrect args for pair coefficients");
 }
 
 /* ----------------------------------------------------------------------
@@ -340,10 +299,10 @@ std::tuple<double, double, double, double, double, double> PairNEP::calc_max_err
     }
 
     double min_f_err, max_f_err, avg_f_err, min_ei_err, max_ei_err, avg_ei_err;
-    min_f_err = 10000;
+    min_f_err = std::numeric_limits<double>::infinity();
     max_f_err = 0.0;
     avg_f_err = 0.0;
-    min_ei_err = 10000;
+    min_ei_err = std::numeric_limits<double>::infinity();
     max_ei_err = 0.0;
     avg_ei_err = 0.0;
 
@@ -351,6 +310,7 @@ std::tuple<double, double, double, double, double, double> PairNEP::calc_max_err
     double _tmp_ei = 0.0;
     // find max_mean error
     for (j = 0; j < nlocal; j++) {
+        if (!type_mappings[0].active[atom->type[j] - 1]) continue;
         _tmp_f = sqrt(f_max_meanff[j] / num_ff);
         _tmp_ei  = sqrt(ei_max_meanff[j]/ num_ff);
         if (min_f_err > _tmp_f) min_f_err = _tmp_f;
@@ -405,7 +365,7 @@ void PairNEP::grow_memory(int nall)
 
 void PairNEP::compute(int eflag, int vflag)
 {
-    if (eflag || vflag) ev_setup(eflag, vflag);
+    ev_init(eflag, vflag);
 
     // int newton_pair = force->newton_pair;
     int ff_idx=0;
@@ -419,7 +379,7 @@ void PairNEP::compute(int eflag, int vflag)
     double* per_atom_potential = nullptr;
     double** per_atom_virial = nullptr;
     int per_atom_virial_components = 0;
-    double *virial = force->pair->virial;
+    double *virial = this->virial;
     double **f = atom->f;
     // for dp and nep model from jitscript
     if (num_ff > 1) {
@@ -489,9 +449,9 @@ void PairNEP::compute(int eflag, int vflag)
                 kspace_method, static_cast<long long>(atom->natoms), world);
             if (ff_idx == 0) {
                 for (int i = 0; i < n_all; i++) {
-                    f[i][0] = f_n[0][i][0];
-                    f[i][1] = f_n[0][i][1];
-                    f[i][2] = f_n[0][i][2];
+                    f[i][0] += f_n[0][i][0];
+                    f[i][1] += f_n[0][i][1];
+                    f[i][2] += f_n[0][i][2];
                 }
                 if (eflag_atom) {
                     for (int i = 0; i < atom->nlocal; i++) {
@@ -499,7 +459,7 @@ void PairNEP::compute(int eflag, int vflag)
                     }
                 }
                 if (eflag) {
-                    eng_vdwl = total_potential;
+                    eng_vdwl += total_potential;
                 }
                 if (vflag) {
                     for (int component = 0; component < 6; ++component) {
@@ -538,10 +498,14 @@ void PairNEP::compute(int eflag, int vflag)
         MPI_Allreduce(&min_ei_err, &glb_min_ei_err, 1, MPI_DOUBLE, MPI_MIN, world);
         MPI_Allreduce(&avg_ei_err, &glb_avg_ei_err, 1, MPI_DOUBLE, MPI_SUM, world);
 
-        if (atom->natoms > 0) {
-            glb_avg_f_err /= double(atom->natoms);
-            glb_avg_ei_err /= double(atom->natoms);
-        }
+        long long local_active = 0, global_active = 0;
+        for (int i = 0; i < nlocal; ++i)
+            if (type_mappings[0].active[atom->type[i] - 1]) ++local_active;
+        MPI_Allreduce(&local_active, &global_active, 1, MPI_LONG_LONG, MPI_SUM, world);
+        if (global_active == 0)
+            error->all(FLERR, "Cannot calculate model deviation: no active atoms");
+        glb_avg_f_err /= static_cast<double>(global_active);
+        glb_avg_ei_err /= static_cast<double>(global_active);
 
         max_err_list.push_back(glb_max_f_err);
         max_err_ei_list.push_back(glb_max_ei_err);

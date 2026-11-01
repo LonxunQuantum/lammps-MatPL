@@ -231,7 +231,7 @@ public:
     int vflag_atom,         // virial peratom flag
     int cvflag_atom,        // virial-9 peratom flag
     int nall,               // nlocal + nghost
-    int inum, 
+    int inum,
     int nlocal,
     int max_neighbors,          // row nums of firstneigh
     int num_neighbors,          // col nums of firstneigh -> j = firstneigh[i + num_neighs * jj] & NEIGHMASK
@@ -264,6 +264,39 @@ public:
   double* cv_per_atom;
 
 private:
+  template <bool HAS_NULL>
+  void compute_impl(
+    int eflag_global,
+    int eflag_atom,
+    int vflag_either,
+    int vflag_global,
+    int vflag_atom,
+    int cvflag_atom,
+    int nall,
+    int inum,
+    int nlocal,
+    int max_J_neigh,
+    int max_I_neigh,
+    int* itype,
+    int* ilist,
+    int* numneigh,
+    int* firstneigh,
+    double* position,
+    double* potential_per_atom_lmp,
+    double* potential_per_atom_copy,
+    double* force_per_atom_lmp,
+    double* force_per_atom_copy,
+    double* virial_per_atom,
+    double* cvirial_per_atom,
+    const double* box_h,
+    const char* kspace_method,
+    long long natoms_global,
+    int mpi_size,
+    NEPKKAllreduceDouble allreduce_double,
+    void* allreduce_context,
+    double* h_etot_virial_global
+);
+  bool has_null_ = false;
   int sim_num_types_ = 0;
   std::vector<int> sim_type_set_;
   std::vector<int> configured_type_map_;
