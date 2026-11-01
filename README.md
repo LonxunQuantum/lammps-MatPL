@@ -1,3 +1,5 @@
+Installation guide for the pair_NULL branch (MatPL + Mold, CMake and Slurm): [step by step](docs/MOLD_CMAKE_GUIDE.md).
+
 # nep with KOKKOS
 
 In this LAMMPS Kokkos version of NEP, neighbor list computations are handled by Kokkos on the GPU, while energy and force calculations are performed through custom C++/CUDA operators. Compared to the earlier MatPL-2025.3 version, memory consumption has been reduced by nearly one-third, and inference speed has been significantly accelerated. Furthermore, it demonstrates excellent parallel efficiency across nodes, enabling scalability to multi-node clusters.
