@@ -43,6 +43,7 @@ wuxingxing@pwmat.com and MatPL development team. 2026. Beijing Lonxun Quantum Co
 #include <fstream>
 #include <iostream>
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 #include <cub/cub.cuh>
@@ -147,9 +148,7 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
   }
 
   if (zbl.enabled) {
-    zbl.cpu_para.resize(550);
     zbl.cpu_atomic_numbers.resize(NUM_ELEMENTS);
-    zbl.para.resize(550);
     zbl.atomic_numbers.resize(NUM_ELEMENTS);
   } 
   cpu_element_atomic_number_list.resize(paramb.num_types);
@@ -425,12 +424,33 @@ void NEPKK::read_neptxt(const char* file_potential, const bool is_rank_0, const 
           0,                            // offset = 0
           cudaMemcpyHostToDevice);
 
-  // flexible zbl potential parameters
+  // The text potential stores ten flexible-ZBL values per unordered type pair.
   if (zbl.flexibled) {
-    int num_type_zbl = (paramb.num_types * (paramb.num_types + 1)) / 2;
+    const int num_type_zbl = (paramb.num_types * (paramb.num_types + 1)) / 2;
+    zbl.cpu_para.resize(10 * num_type_zbl);
+    zbl.para.resize(10 * num_type_zbl);
     for (int d = 0; d < 10 * num_type_zbl; ++d) {
       tokens = get_tokens(input);
-      zbl.cpu_para[d] = static_cast<NEP_FLOAT>(get_double_from_token(tokens[0], __FILE__, __LINE__));
+      const double value = get_double_from_token(tokens[0], __FILE__, __LINE__);
+      if (!std::isfinite(value)) {
+        std::cerr << "Flexible ZBL parameter " << d << " must be finite.\n";
+        exit(1);
+      }
+      zbl.cpu_para[d] = static_cast<NEP_FLOAT>(value);
+      if (!std::isfinite(zbl.cpu_para[d])) {
+        std::cerr << "Flexible ZBL parameter " << d
+                  << " cannot be represented in the selected NEP precision.\n";
+        exit(1);
+      }
+    }
+    for (int pair = 0; pair < num_type_zbl; ++pair) {
+      const NEP_FLOAT inner = zbl.cpu_para[10 * pair];
+      const NEP_FLOAT outer = zbl.cpu_para[10 * pair + 1];
+      if (inner < FLOAT_LIT(0.0) || outer <= inner || outer > paramb.rc_radial) {
+        std::cerr << "Invalid flexible ZBL cutoffs for pair " << pair
+                  << ": require 0 <= inner < outer <= radial cutoff.\n";
+        exit(1);
+      }
     }
     zbl.num_types = paramb.num_types;
   }

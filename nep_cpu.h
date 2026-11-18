@@ -98,7 +98,7 @@ public:
     double rc_inner = 1.0;
     double rc_outer = 2.0;
     int atomic_numbers[103];
-    double para[550];
+    std::vector<double> para;
   };
 
   struct DFTD3 {

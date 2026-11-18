@@ -2253,12 +2253,25 @@ void NEP3_CPU::read_neptxt(const std::string& potential_filename, const bool is_
     paramb.q_scaler[d] = get_double_from_token(tokens[0], __FILE__, __LINE__);
   }
 
-  // flexible zbl potential parameters if (zbl.flexibled)
+  // The text potential stores ten flexible-ZBL values per unordered type pair.
   if (zbl.flexibled) {
-    // int num_type_zbl = (paramb.num_types * (paramb.num_types + 1)) / 2;
+    zbl.para.resize(10 * num_type_zbl);
     for (int d = 0; d < 10 * num_type_zbl; ++d) {
       tokens = get_tokens(input);
       zbl.para[d] = get_double_from_token(tokens[0], __FILE__, __LINE__);
+      if (!std::isfinite(zbl.para[d])) {
+        std::cerr << "Flexible ZBL parameter " << d << " must be finite.\n";
+        exit(1);
+      }
+    }
+    for (int pair = 0; pair < num_type_zbl; ++pair) {
+      const double inner = zbl.para[10 * pair];
+      const double outer = zbl.para[10 * pair + 1];
+      if (inner < 0.0 || outer <= inner || outer > paramb.rc_radial) {
+        std::cerr << "Invalid flexible ZBL cutoffs for pair " << pair
+                  << ": require 0 <= inner < outer <= radial cutoff.\n";
+        exit(1);
+      }
     }
     zbl.num_types = paramb.num_types;
   }
