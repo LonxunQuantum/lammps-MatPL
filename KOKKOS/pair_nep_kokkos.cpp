@@ -21,6 +21,7 @@
 #include "force.h"
 #include "kokkos.h"
 #include "memory_kokkos.h"
+#include "modify.h"
 #include "neighbor_kokkos.h"
 #include "neigh_request.h"
 #include "neighbor.h"
@@ -306,6 +307,8 @@ void PairNEPKokkos<DeviceType>::init_style()
   if (force->newton_pair == 0)
     error->all(FLERR, "Pair style matpl/nep/kk requires newton pair on");
   newton_pair = force->newton_pair;
+  preserve_bec_positions = !nep_gpu_models.empty() && nep_gpu_models[0].has_charge_bec() &&
+    !modify->get_compute_by_style("^qnep/bec/atom$").empty();
   // printf("===== DEBUG: newton_pair = %d =====\n", newton_pair);
 }
 
@@ -519,6 +522,14 @@ void PairNEPKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
     0.0,          domain->yprd, domain->yz,
     0.0,          0.0,          domain->zprd
   };
+  const double* position = reinterpret_cast<const double*>(x.data());
+  has_bec_position_snapshot = preserve_bec_positions && nall > 0;
+  if (has_bec_position_snapshot) {
+    // End-of-step fixes can remap coordinates before BEC is requested.
+    const size_t count = static_cast<size_t>(nall) * 3;
+    if (bec_positions.size() < count) bec_positions.resize(count);
+    bec_positions.copy_from_device(position, count);
+  }
   MPI_Comm nepkk_mpi_comm = world;
   if (!is_devi_step) {
     nep_gpu_models[0].compute(
@@ -537,7 +548,7 @@ void PairNEPKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
       const_cast<int*>(reinterpret_cast<const int*>(d_ilist.data())),        // ilist
       const_cast<int*>(reinterpret_cast<const int*>(d_numneigh.data())),     // numneigh
       const_cast<int*>(reinterpret_cast<const int*>(d_neighbors.data())),    // neighbors
-      const_cast<double*>(reinterpret_cast<const double*>(x.data())),
+      position,
       // const_cast<double*>(reinterpret_cast<const double*>(d_eatom.data())),
       // d_eatom.data(),
       // const_cast<double*>(reinterpret_cast<double*>(d_eatom.data())),
@@ -581,7 +592,7 @@ void PairNEPKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
         const_cast<int*>(reinterpret_cast<const int*>(d_ilist.data())),        // ilist
         const_cast<int*>(reinterpret_cast<const int*>(d_numneigh.data())),     // numneigh
         const_cast<int*>(reinterpret_cast<const int*>(d_neighbors.data())),    // neighbors
-        const_cast<double*>(reinterpret_cast<const double*>(x.data())),
+        position,
         // const_cast<double*>(reinterpret_cast<const double*>(d_eatom.data())),
         // d_eatom.data(),
         // const_cast<double*>(reinterpret_cast<double*>(d_eatom.data())),
@@ -770,6 +781,8 @@ void PairNEPKokkos<DeviceType>::qnep_bec_atom(double **array, int nmax)
     error->all(FLERR, "compute qnep/bec/atom internal array is smaller than atom->nlocal");
   }
 
+  const double* position = has_bec_position_snapshot ? bec_positions.data() :
+    reinterpret_cast<const double*>(x.data());
   nep_gpu_models[0].compute_bec(
     inum,
     nlocal,
@@ -777,7 +790,8 @@ void PairNEPKokkos<DeviceType>::qnep_bec_atom(double **array, int nmax)
     d_neighbors.extent(0),
     const_cast<int*>(reinterpret_cast<const int*>(d_ilist.data())),
     const_cast<int*>(reinterpret_cast<const int*>(d_numneigh.data())),
-    const_cast<int*>(reinterpret_cast<const int*>(d_neighbors.data())));
+    const_cast<int*>(reinterpret_cast<const int*>(d_neighbors.data())),
+    position);
   Kokkos::fence();
 
   h_bec_nep_float.resize(nall * 9);

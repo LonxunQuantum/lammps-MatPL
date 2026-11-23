@@ -44,7 +44,6 @@ using NEPKKAllreduceDouble = void (*)(const double* sendbuf, double* recvbuf, in
 struct LMP_Data  {
   GPU_Vector<int> type;
   GPU_Vector<int> ilist;
-  GPU_Vector<NEP_FLOAT> position; // 将double坐标转换为float，读取会更快
 };
 
 struct NEPKK_Box {
@@ -217,7 +216,8 @@ public:
     int num_neighbors,
     const int* ilist,
     const int* numneigh,
-    const int* firstneigh);
+    const int* firstneigh,
+    const double* position);
   void copy_bec_to_host(NEP_FLOAT* host_bec, int nall);
   void checkMemoryUsage(int sgin=0);
 
@@ -239,7 +239,7 @@ public:
     int* ilist,                 // atom i list
     int* numneigh,              // the neighbor nums of each i, [inum]
     int* firstneigh,            // the neighbor list of each i, [inum * NM]
-    double* position,           // postion of atoms x, [n_all * 3]
+    const double* position,     // LAMMPS device coordinates, [n_all * 3]
     double* potential_per_atom_lmp,  // the output of ei
     double* potential_per_atom_copy, // the output of ei
     double* force_per_atom_lmp,      // the output of force

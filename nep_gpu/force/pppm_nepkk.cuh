@@ -156,14 +156,14 @@ __global__ void nepkk_pppm_find_mesh(
   const NEPKK_PPPM_Para para,
   const NEPKK_Box box,
   const NEP_FLOAT* g_charge,
-  const NEP_FLOAT* g_pos,
+  const double* g_pos,
   cufftComplex* g_mesh)
 {
   const int n = blockIdx.x * blockDim.x + threadIdx.x;
   if (n < N) {
-    const NEP_FLOAT x = g_pos[n * 3];
-    const NEP_FLOAT y = g_pos[n * 3 + 1];
-    const NEP_FLOAT z = g_pos[n * 3 + 2];
+    const double x = g_pos[n * 3];
+    const double y = g_pos[n * 3 + 1];
+    const double z = g_pos[n * 3 + 2];
     const float q = float(g_charge[n]);
     const float sx = float((box.hi[0] * x + box.hi[1] * y + box.hi[2] * z) * para.K[0]);
     const float sy = float((box.hi[3] * x + box.hi[4] * y + box.hi[5] * z) * para.K[1]);
@@ -285,7 +285,7 @@ __global__ void nepkk_pppm_find_force_virial_from_field(
   const NEPKK_PPPM_Para para,
   const NEPKK_Box box,
   const NEP_FLOAT* g_charge,
-  const NEP_FLOAT* g_pos,
+  const double* g_pos,
   const cufftComplex* g_mesh_G,
   const cufftComplex* g_mesh_fft_x_ifft,
   const cufftComplex* g_mesh_fft_y_ifft,
@@ -305,9 +305,9 @@ __global__ void nepkk_pppm_find_force_virial_from_field(
 {
   const int n = blockIdx.x * blockDim.x + threadIdx.x;
   if (n < N) {
-    const NEP_FLOAT x = g_pos[n * 3];
-    const NEP_FLOAT y = g_pos[n * 3 + 1];
-    const NEP_FLOAT z = g_pos[n * 3 + 2];
+    const double x = g_pos[n * 3];
+    const double y = g_pos[n * 3 + 1];
+    const double z = g_pos[n * 3 + 2];
     const float q = float(K_C_SP * g_charge[n]);
     const float sx = float((box.hi[0] * x + box.hi[1] * y + box.hi[2] * z) * para.K[0]);
     const float sy = float((box.hi[3] * x + box.hi[4] * y + box.hi[5] * z) * para.K[1]);
@@ -506,7 +506,7 @@ inline void nepkk_pppm_find_force_charge2(
   const int mesh_mode,
   const int user_mesh[3],
   const GPU_Vector<NEP_FLOAT>& charge,
-  const GPU_Vector<NEP_FLOAT>& position,
+  const double* position,
   GPU_Vector<NEP_FLOAT>& D_real,
   double* force_per_atom,
   double* virial_per_atom,
@@ -530,7 +530,7 @@ inline void nepkk_pppm_find_force_charge2(
   CUDA_CHECK_KERNEL
 
   nepkk_pppm_find_mesh<<<atom_grid_size, 64>>>(
-    N, para, box, charge.data(), position.data(), pppm.mesh.data());
+    N, para, box, charge.data(), position, pppm.mesh.data());
   CUDA_CHECK_KERNEL
 
   if (mpi_size > 1) {
@@ -591,7 +591,7 @@ inline void nepkk_pppm_find_force_charge2(
     para,
     box,
     charge.data(),
-    position.data(),
+    position,
     pppm.mesh_G.data(),
     pppm.mesh_x.data(),
     pppm.mesh_y.data(),

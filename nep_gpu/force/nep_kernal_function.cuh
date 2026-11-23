@@ -45,6 +45,30 @@ static __device__ __inline__ double atomicAdd(double* address, double val)
 }
 #endif
 
+struct NEPPairDisplacement {
+  double x, y, z;
+
+  __device__ __forceinline__ double squared_norm() const
+  {
+    return x * x + y * y + z * z;
+  }
+
+  __device__ __forceinline__ void store(NEP_FLOAT (&r12)[3]) const
+  {
+    r12[0] = static_cast<NEP_FLOAT>(x);
+    r12[1] = static_cast<NEP_FLOAT>(y);
+    r12[2] = static_cast<NEP_FLOAT>(z);
+  }
+};
+
+// LAMMPS supplies the periodic images. Form the displacement and its
+// length in double precision before narrowing to the NEP inference type.
+static __device__ __forceinline__ NEPPairDisplacement nep_pair_displacement(
+  const double* neighbor, double x, double y, double z)
+{
+  return {neighbor[0] - x, neighbor[1] - y, neighbor[2] - z};
+}
+
 static __global__ void calc_2b_descriptor_sharemem(
   NEPKK::ParaMB paramb,
   const NEP_FLOAT* param_c2,
@@ -58,7 +82,7 @@ static __global__ void calc_2b_descriptor_sharemem(
   int* g_NL_angular,// 顺带构建出小的多体近邻表
   const int* __restrict__ g_ilist,
   const int* __restrict__ g_type,
-  const NEP_FLOAT* __restrict__ g_pos,
+  const double* __restrict__ g_pos,
   NEP_FLOAT* g_Fp)
 {
   extern __shared__ NEP_FLOAT s_c[];
@@ -73,9 +97,9 @@ static __global__ void calc_2b_descriptor_sharemem(
     int count_angular = 0;    
     int atomi = g_ilist[n1];
     int t1 = static_cast<int>(paramb.nep_to_sim[g_type[atomi]]);
-    NEP_FLOAT x1 = g_pos[atomi*3  ];
-    NEP_FLOAT y1 = g_pos[atomi*3+1];
-    NEP_FLOAT z1 = g_pos[atomi*3+2];
+    double x1 = g_pos[atomi*3  ];
+    double y1 = g_pos[atomi*3+1];
+    double z1 = g_pos[atomi*3+2];
     int c_start = paramb.sim_num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
     // get radial descriptors
     for (int i1 = 0; i1 < g_numneigh[atomi]; ++i1) {
@@ -84,10 +108,8 @@ static __global__ void calc_2b_descriptor_sharemem(
       // if (atomi == 1) printf("calc n1 %d nn %d n2 %d\n", atomi, g_numneigh[atomi], n2);
 
       int c_idx_I = t1 * c_start + t2 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
-      NEP_FLOAT x12 = g_pos[n2*3  ] - x1;
-      NEP_FLOAT y12 = g_pos[n2*3+1] - y1;
-      NEP_FLOAT z12 = g_pos[n2*3+2] - z1;
-      NEP_FLOAT d12_square = x12 * x12 + y12 * y12 + z12 * z12;
+      const auto displacement = nep_pair_displacement(g_pos + n2 * 3, x1, y1, z1);
+      const double d12_square = displacement.squared_norm();
       // if(n1%10==0) printf("ALL NEIGH n1 %d atomi %d t1 %d jnums %d n2 %d t2 %d r12 %f n1xyz %f %f %f n2xyz %f %f %f\n",\
         n1, atomi, t1, g_numneigh[atomi], n2, t2, sqrt(d12_square), x1, y1, z1, g_pos[n2*3], g_pos[n2*3+1], g_pos[n2*3+2]);
       
@@ -102,7 +124,7 @@ static __global__ void calc_2b_descriptor_sharemem(
       // if(n1%10==0) printf("2B NEIGH n1 %d atomi %d t1 %d jnums %d n2 %d t2 %d r12 %f n1xyz %f %f %f n2xyz %f %f %f\n",\
           n1, atomi, t1, g_numneigh[atomi], n2, t2, sqrt(d12_square), x1, y1, z1, g_pos[n2*3], g_pos[n2*3+1], g_pos[n2*3+2]);
 
-      NEP_FLOAT d12 = sqrt(d12_square);
+      const NEP_FLOAT d12 = static_cast<NEP_FLOAT>(sqrt(d12_square));
       // 2b->qn
       NEP_FLOAT fc12;
       find_fc(paramb.rc_radial, paramb.rcinv_radial, d12, fc12);
@@ -167,7 +189,7 @@ static __global__ void calc_2b_descriptor(
   int* g_NL_angular,// 顺带构建出小的多体近邻表
   const int* __restrict__ g_ilist,
   const int* __restrict__ g_type,
-  const NEP_FLOAT* __restrict__ g_pos,
+  const double* __restrict__ g_pos,
   NEP_FLOAT* g_Fp)
 {
   int n1 = blockIdx.x * blockDim.x + threadIdx.x;
@@ -175,19 +197,17 @@ static __global__ void calc_2b_descriptor(
     int count_angular = 0;
     int atomi = g_ilist[n1];
     int t1 = static_cast<int>(paramb.nep_to_sim[g_type[atomi]]);
-    NEP_FLOAT x1 = g_pos[atomi*3  ];
-    NEP_FLOAT y1 = g_pos[atomi*3+1];
-    NEP_FLOAT z1 = g_pos[atomi*3+2];
+    double x1 = g_pos[atomi*3  ];
+    double y1 = g_pos[atomi*3+1];
+    double z1 = g_pos[atomi*3+2];
     int c_start = paramb.sim_num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
     // get radial descriptors
     for (int i1 = 0; i1 < g_numneigh[atomi]; ++i1) {
       int n2 = g_firstneigh[i1 * num_neigh + atomi] & NEIGHMASK; 
       int t2 = static_cast<int>(paramb.nep_to_sim[g_type[n2]]);
       int c_idx_I = t1 * c_start + t2 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
-      NEP_FLOAT x12 = g_pos[n2*3  ] - x1;
-      NEP_FLOAT y12 = g_pos[n2*3+1] - y1;
-      NEP_FLOAT z12 = g_pos[n2*3+2] - z1;
-      NEP_FLOAT d12_square = x12 * x12 + y12 * y12 + z12 * z12;
+      const auto displacement = nep_pair_displacement(g_pos + n2 * 3, x1, y1, z1);
+      const double d12_square = displacement.squared_norm();
       // if(n1%10==0) printf("ALL NEIGH n1 %d atomi %d t1 %d jnums %d n2 %d t2 %d r12 %f n1xyz %f %f %f n2xyz %f %f %f\n",\
         n1, atomi, t1, g_numneigh[atomi], n2, t2, sqrt(d12_square), x1, y1, z1, g_pos[n2*3], g_pos[n2*3+1], g_pos[n2*3+2]);
       
@@ -202,7 +222,7 @@ static __global__ void calc_2b_descriptor(
       // if(n1==1) printf("2B NEIGH n1 %d atomi %d t1 %d jnums %d n2 %d t2 %d r12 %f n1xyz %f %f %f n2xyz %f %f %f\n",\
           n1, atomi, t1, g_numneigh[atomi], n2, t2, sqrt(d12_square), x1, y1, z1, g_pos[n2*3], g_pos[n2*3+1], g_pos[n2*3+2]);
 
-      NEP_FLOAT d12 = sqrt(d12_square);
+      const NEP_FLOAT d12 = static_cast<NEP_FLOAT>(sqrt(d12_square));
       // 2b->qn
       NEP_FLOAT fc12;
       find_fc(paramb.rc_radial, paramb.rcinv_radial, d12, fc12);
@@ -232,7 +252,7 @@ static __global__ void calc_3b_descriptor_sharemem(
   const int* g_NL_angular,// 顺带构建出小的多体近邻表
   const int* __restrict__ g_ilist,
   const int* __restrict__ g_type,
-  const NEP_FLOAT* __restrict__ g_pos,
+  const double* __restrict__ g_pos,
   NEP_FLOAT* g_Fp,
   NEP_FLOAT* g_sum_fxyz)
 {
@@ -247,9 +267,9 @@ static __global__ void calc_3b_descriptor_sharemem(
   if (n1 < N) {
     int atomi = g_ilist[n1];
     int t1 = static_cast<int>(paramb.nep_to_sim[g_type[atomi]]);
-    NEP_FLOAT x1 = g_pos[atomi*3  ];
-    NEP_FLOAT y1 = g_pos[atomi*3+1];
-    NEP_FLOAT z1 = g_pos[atomi*3+2];
+    double x1 = g_pos[atomi*3  ];
+    double y1 = g_pos[atomi*3+1];
+    double z1 = g_pos[atomi*3+2];
     int c_start = paramb.sim_num_types * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
     for (int n = 0; n < paramb.n_max_angular_plus1; ++n) {
       NEP_FLOAT s[NUM_OF_ABC] = {FLOAT_LIT(0.0)};
@@ -257,10 +277,11 @@ static __global__ void calc_3b_descriptor_sharemem(
         int n2 = g_NL_angular[atomi + nlocal * i1];
         int t2 = static_cast<int>(paramb.nep_to_sim[g_type[n2]]);
         int c_idx_I = t1 * c_start + t2 * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
-        NEP_FLOAT x12 = g_pos[n2*3  ] - x1;
-        NEP_FLOAT y12 = g_pos[n2*3+1] - y1;
-        NEP_FLOAT z12 = g_pos[n2*3+2] - z1;
-        NEP_FLOAT d12 = sqrt(x12 * x12 + y12 * y12 + z12 * z12);
+        const auto displacement = nep_pair_displacement(g_pos + n2 * 3, x1, y1, z1);
+        const NEP_FLOAT d12 = static_cast<NEP_FLOAT>(sqrt(displacement.squared_norm()));
+        const NEP_FLOAT x12 = static_cast<NEP_FLOAT>(displacement.x);
+        const NEP_FLOAT y12 = static_cast<NEP_FLOAT>(displacement.y);
+        const NEP_FLOAT z12 = static_cast<NEP_FLOAT>(displacement.z);
         NEP_FLOAT fc12;
         find_fc(paramb.rc_angular, paramb.rcinv_angular, d12, fc12);
 
@@ -297,7 +318,7 @@ static __global__ void calc_3b_descriptor(
   const int* g_NL_angular,// 顺带构建出小的多体近邻表
   const int* __restrict__ g_ilist,
   const int* __restrict__ g_type,
-  const NEP_FLOAT* __restrict__ g_pos,
+  const double* __restrict__ g_pos,
   NEP_FLOAT* g_Fp,
   NEP_FLOAT* g_sum_fxyz)
 {
@@ -305,9 +326,9 @@ static __global__ void calc_3b_descriptor(
   if (n1 < N) {
     int atomi = g_ilist[n1];
     int t1 = static_cast<int>(paramb.nep_to_sim[g_type[atomi]]);
-    NEP_FLOAT x1 = g_pos[atomi*3  ];
-    NEP_FLOAT y1 = g_pos[atomi*3+1];
-    NEP_FLOAT z1 = g_pos[atomi*3+2];
+    double x1 = g_pos[atomi*3  ];
+    double y1 = g_pos[atomi*3+1];
+    double z1 = g_pos[atomi*3+2];
     int c_start = paramb.sim_num_types * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
     for (int n = 0; n < paramb.n_max_angular_plus1; ++n) {
       NEP_FLOAT s[NUM_OF_ABC] = {FLOAT_LIT(0.0)};
@@ -315,10 +336,11 @@ static __global__ void calc_3b_descriptor(
         int n2 = g_NL_angular[atomi + nlocal * i1];
         int t2 = static_cast<int>(paramb.nep_to_sim[g_type[n2]]);
         int c_idx_I = t1 * c_start + t2 * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
-        NEP_FLOAT x12 = g_pos[n2*3  ] - x1;
-        NEP_FLOAT y12 = g_pos[n2*3+1] - y1;
-        NEP_FLOAT z12 = g_pos[n2*3+2] - z1;
-        NEP_FLOAT d12 = sqrt(x12 * x12 + y12 * y12 + z12 * z12);
+        const auto displacement = nep_pair_displacement(g_pos + n2 * 3, x1, y1, z1);
+        const NEP_FLOAT d12 = static_cast<NEP_FLOAT>(sqrt(displacement.squared_norm()));
+        const NEP_FLOAT x12 = static_cast<NEP_FLOAT>(displacement.x);
+        const NEP_FLOAT y12 = static_cast<NEP_FLOAT>(displacement.y);
+        const NEP_FLOAT z12 = static_cast<NEP_FLOAT>(displacement.z);
         NEP_FLOAT fc12;
         find_fc(paramb.rc_angular, paramb.rcinv_angular, d12, fc12);
 
@@ -484,7 +506,7 @@ static __global__ void backward_force_2b_perneigh(
     const int* g_NL,
     const int* __restrict__ g_ilist,
     const int* __restrict__ g_type,
-    const NEP_FLOAT* __restrict__ g_pos,
+    const double* __restrict__ g_pos,
     const NEP_FLOAT* __restrict__ g_Fp,
     double* g_f,
     double* g_virial)
@@ -527,9 +549,9 @@ static __global__ void backward_force_2b_perneigh(
     int atomi = g_ilist[blockIdx.x];   // 每个 block 处理一个中心原子
     int t1 = static_cast<int>(paramb.nep_to_sim[g_type[atomi]]);
 
-    NEP_FLOAT x1 = g_pos[atomi*3];
-    NEP_FLOAT y1 = g_pos[atomi*3+1];
-    NEP_FLOAT z1 = g_pos[atomi*3+2];
+    double x1 = g_pos[atomi*3];
+    double y1 = g_pos[atomi*3+1];
+    double z1 = g_pos[atomi*3+2];
 
     NEP_FLOAT fxi = FLOAT_LIT(0.0), fyi = FLOAT_LIT(0.0), fzi = FLOAT_LIT(0.0);
     NEP_FLOAT sxxi = FLOAT_LIT(0.0), syyi = FLOAT_LIT(0.0), szzi = FLOAT_LIT(0.0);
@@ -550,11 +572,13 @@ static __global__ void backward_force_2b_perneigh(
         int c_idx_I = t1 * c_start + t2 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
         int c_idx_J = t2 * c_start + t1 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
 
-        NEP_FLOAT r12[3] = {g_pos[n2*3] - x1, g_pos[n2*3+1] - y1, g_pos[n2*3+2] - z1};
-        NEP_FLOAT d12_sq = r12[0]*r12[0] + r12[1]*r12[1] + r12[2]*r12[2];
+        const auto displacement = nep_pair_displacement(g_pos + n2 * 3, x1, y1, z1);
+        const double d12_sq = displacement.squared_norm();
         if (d12_sq > paramb.rc_radial_square) continue;
 
-        NEP_FLOAT d12 = sqrt(d12_sq);
+        const NEP_FLOAT d12 = static_cast<NEP_FLOAT>(sqrt(d12_sq));
+        NEP_FLOAT r12[3];
+        displacement.store(r12);
         NEP_FLOAT d12inv = FLOAT_LIT(1.0) / d12;
         NEP_FLOAT fc12, fcp12;
         NEP_FLOAT fnp12[MAX_NUM_N];
@@ -737,7 +761,7 @@ static __global__ void find_bec_radial_lmp(
   NEPKK::ANN annmb,
   const int* __restrict__ g_ilist,
   const int* __restrict__ g_type,
-  const NEP_FLOAT* __restrict__ g_pos,
+  const double* __restrict__ g_pos,
   const NEP_FLOAT* __restrict__ g_charge_derivative,
   NEP_FLOAT* g_bec)
 {
@@ -745,9 +769,9 @@ static __global__ void find_bec_radial_lmp(
   if (n1 < N) {
     const int atomi = g_ilist[n1];
     const int t1 = g_type[atomi];
-    const NEP_FLOAT x1 = g_pos[atomi * 3];
-    const NEP_FLOAT y1 = g_pos[atomi * 3 + 1];
-    const NEP_FLOAT z1 = g_pos[atomi * 3 + 2];
+    const double x1 = g_pos[atomi * 3];
+    const double y1 = g_pos[atomi * 3 + 1];
+    const double z1 = g_pos[atomi * 3 + 2];
     const int c_start = paramb.num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
 
     for (int i1 = 0; i1 < g_numneigh[atomi]; ++i1) {
@@ -755,10 +779,13 @@ static __global__ void find_bec_radial_lmp(
       const int t2 = g_type[n2];
       const int c_idx_I = t1 * c_start + t2 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
 
-      NEP_FLOAT r12[3] = {g_pos[n2 * 3] - x1, g_pos[n2 * 3 + 1] - y1, g_pos[n2 * 3 + 2] - z1};
-      const NEP_FLOAT d12_square = r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2];
+      const auto displacement = nep_pair_displacement(g_pos + n2 * 3, x1, y1, z1);
+      const double d12_square = displacement.squared_norm();
       if (d12_square > paramb.rc_radial_square) continue;
-      const NEP_FLOAT d12 = sqrt(d12_square);
+
+      const NEP_FLOAT d12 = static_cast<NEP_FLOAT>(sqrt(d12_square));
+      NEP_FLOAT r12[3];
+      displacement.store(r12);
       const NEP_FLOAT d12inv = FLOAT_LIT(1.0) / d12;
       NEP_FLOAT fc12, fcp12;
       NEP_FLOAT fn12[MAX_NUM_N];
@@ -806,7 +833,7 @@ static __global__ void find_bec_angular_lmp(
   NEPKK::ANN annmb,
   const int* __restrict__ g_ilist,
   const int* __restrict__ g_type,
-  const NEP_FLOAT* __restrict__ g_pos,
+  const double* __restrict__ g_pos,
   const NEP_FLOAT* __restrict__ g_charge_derivative,
   const NEP_FLOAT* __restrict__ g_sum_fxyz,
   NEP_FLOAT* g_bec)
@@ -824,17 +851,19 @@ static __global__ void find_bec_angular_lmp(
     }
 
     const int t1 = g_type[atomi];
-    const NEP_FLOAT x1 = g_pos[atomi * 3];
-    const NEP_FLOAT y1 = g_pos[atomi * 3 + 1];
-    const NEP_FLOAT z1 = g_pos[atomi * 3 + 2];
+    const double x1 = g_pos[atomi * 3];
+    const double y1 = g_pos[atomi * 3 + 1];
+    const double z1 = g_pos[atomi * 3 + 2];
     const int c_start = paramb.num_types * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
     for (int i1 = 0; i1 < g_NN_angular[atomi]; ++i1) {
       const int index = i1 * nlocal + atomi;
       const int n2 = g_NL_angular[index];
       const int t2 = g_type[n2];
       const int c_idx_I = t1 * c_start + t2 * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
-      NEP_FLOAT r12[3] = {g_pos[n2 * 3] - x1, g_pos[n2 * 3 + 1] - y1, g_pos[n2 * 3 + 2] - z1};
-      const NEP_FLOAT d12 = sqrt(r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2]);
+      const auto displacement = nep_pair_displacement(g_pos + n2 * 3, x1, y1, z1);
+      const NEP_FLOAT d12 = static_cast<NEP_FLOAT>(sqrt(displacement.squared_norm()));
+      NEP_FLOAT r12[3];
+      displacement.store(r12);
       NEP_FLOAT fc12, fcp12;
       NEP_FLOAT fn12[MAX_NUM_N];
       NEP_FLOAT fnp12[MAX_NUM_N];
@@ -897,7 +926,7 @@ static __global__ void backward_force_2b_nep(
   const int* g_NL,
   const int* __restrict__ g_ilist,
   const int* __restrict__ g_type,
-  const NEP_FLOAT* __restrict__ g_pos,
+  const double* __restrict__ g_pos,
   const NEP_FLOAT* __restrict__ g_Fp,
   double* g_f,
   double* g_virial
@@ -932,9 +961,9 @@ static __global__ void backward_force_2b_nep(
     NEP_FLOAT s_syx = FLOAT_LIT(0.0);
     NEP_FLOAT s_szx = FLOAT_LIT(0.0);
     NEP_FLOAT s_szy = FLOAT_LIT(0.0);
-    NEP_FLOAT x1 = g_pos[atomi*3  ];
-    NEP_FLOAT y1 = g_pos[atomi*3+1];
-    NEP_FLOAT z1 = g_pos[atomi*3+2];
+    double x1 = g_pos[atomi*3  ];
+    double y1 = g_pos[atomi*3+1];
+    double z1 = g_pos[atomi*3+2];
     int c_start = paramb.sim_num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
     // int Fp_idx_start = atomi * annmb.dim;
     NEP_FLOAT Fp_atomi[MAX_NUM_N];
@@ -949,10 +978,13 @@ static __global__ void backward_force_2b_nep(
       int c_idx_I = t1 * c_start + t2 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
       int c_idx_J = t2 * c_start + t1 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
 
-      NEP_FLOAT r12[3] = {g_pos[n2*3] - x1, g_pos[n2*3+1] - y1, g_pos[n2*3+2] - z1};
-      NEP_FLOAT d12_square = r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2];
+      const auto displacement = nep_pair_displacement(g_pos + n2 * 3, x1, y1, z1);
+      const double d12_square = displacement.squared_norm();
       if (d12_square > paramb.rc_radial_square) continue;
-      NEP_FLOAT d12 = sqrt(d12_square);
+
+      const NEP_FLOAT d12 = static_cast<NEP_FLOAT>(sqrt(d12_square));
+      NEP_FLOAT r12[3];
+      displacement.store(r12);
       NEP_FLOAT d12inv = FLOAT_LIT(1.0) / d12;
       NEP_FLOAT f12[3] = {FLOAT_LIT(0.0)};
       NEP_FLOAT f21[3] = {FLOAT_LIT(0.0)};
@@ -1069,7 +1101,7 @@ static __global__ void backward_force_2b_charge(
   const int* g_NL,
   const int* __restrict__ g_ilist,
   const int* __restrict__ g_type,
-  const NEP_FLOAT* __restrict__ g_pos,
+  const double* __restrict__ g_pos,
   const NEP_FLOAT* __restrict__ g_Fp,
   const NEP_FLOAT* __restrict__ g_charge_derivative,
   const NEP_FLOAT* __restrict__ g_D_real,
@@ -1106,9 +1138,9 @@ static __global__ void backward_force_2b_charge(
     NEP_FLOAT s_syx = FLOAT_LIT(0.0);
     NEP_FLOAT s_szx = FLOAT_LIT(0.0);
     NEP_FLOAT s_szy = FLOAT_LIT(0.0);
-    NEP_FLOAT x1 = g_pos[atomi*3  ];
-    NEP_FLOAT y1 = g_pos[atomi*3+1];
-    NEP_FLOAT z1 = g_pos[atomi*3+2];
+    double x1 = g_pos[atomi*3  ];
+    double y1 = g_pos[atomi*3+1];
+    double z1 = g_pos[atomi*3+2];
     int c_start = paramb.sim_num_types * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
     // int Fp_idx_start = atomi * annmb.dim;
     NEP_FLOAT Fp_atomi[MAX_NUM_N];
@@ -1123,10 +1155,13 @@ static __global__ void backward_force_2b_charge(
       int c_idx_I = t1 * c_start + t2 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
       int c_idx_J = t2 * c_start + t1 * paramb.n_max_radial_plus1 * paramb.basis_size_radial_plus1;
 
-      NEP_FLOAT r12[3] = {g_pos[n2*3] - x1, g_pos[n2*3+1] - y1, g_pos[n2*3+2] - z1};
-      NEP_FLOAT d12_square = r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2];
+      const auto displacement = nep_pair_displacement(g_pos + n2 * 3, x1, y1, z1);
+      const double d12_square = displacement.squared_norm();
       if (d12_square > paramb.rc_radial_square) continue;
-      NEP_FLOAT d12 = sqrt(d12_square);
+
+      const NEP_FLOAT d12 = static_cast<NEP_FLOAT>(sqrt(d12_square));
+      NEP_FLOAT r12[3];
+      displacement.store(r12);
       NEP_FLOAT d12inv = FLOAT_LIT(1.0) / d12;
       NEP_FLOAT f12[3] = {FLOAT_LIT(0.0)};
       NEP_FLOAT f21[3] = {FLOAT_LIT(0.0)};
@@ -1243,7 +1278,7 @@ __global__ void backward_force_3b_per_atom_sharemem(
     const int* g_NL_angular,
     const int* __restrict__ g_ilist,
     const int* __restrict__ g_type,
-    const NEP_FLOAT* __restrict__ g_pos,
+    const double* __restrict__ g_pos,
     const NEP_FLOAT* __restrict__ g_Fp,
     const NEP_FLOAT* __restrict__ g_sum_fxyz,
     NEP_FLOAT* g_f12x,
@@ -1257,11 +1292,9 @@ __global__ void backward_force_3b_per_atom_sharemem(
     int atomi = g_ilist[i];
     int t1 = static_cast<int>(paramb.nep_to_sim[g_type[atomi]]);
 
-    NEP_FLOAT* s_x1       = shmem + 0;                           // 1
-    NEP_FLOAT* s_y1       = shmem + 1;                           // 1
-    NEP_FLOAT* s_z1       = shmem + 2;                           // 1
-    NEP_FLOAT* s_Fp       = shmem + 3;                           // dim_angular
-    NEP_FLOAT* s_sum_fxyz = shmem + 3 + paramb.dim_angular;      // n_max_angular_plus1 * NUM_OF_ABC
+    __shared__ double s_x1, s_y1, s_z1;
+    NEP_FLOAT* s_Fp = shmem;
+    NEP_FLOAT* s_sum_fxyz = s_Fp + paramb.dim_angular;
   // 每个线程独占的 fn12 和 fnp12 空间
     const int per_thread_fn_size = MAX_NUM_N * 2;            // fn12 + fnp12 = 20 + 20 = 40
     NEP_FLOAT* s_fn_base = s_sum_fxyz + (paramb.n_max_angular_plus1 * NUM_OF_ABC);
@@ -1276,9 +1309,9 @@ __global__ void backward_force_3b_per_atom_sharemem(
     // ==============================
     if (threadIdx.x < blockDim.x) {
         if (threadIdx.x == 0) {
-            s_x1[0] = g_pos[atomi * 3 + 0];
-            s_y1[0] = g_pos[atomi * 3 + 1];
-            s_z1[0] = g_pos[atomi * 3 + 2];
+            s_x1 = g_pos[atomi * 3 + 0];
+            s_y1 = g_pos[atomi * 3 + 1];
+            s_z1 = g_pos[atomi * 3 + 2];
         }
 
         // 加载 Fp
@@ -1306,13 +1339,10 @@ __global__ void backward_force_3b_per_atom_sharemem(
         int n2    = g_NL_angular[index];
         int t2 = static_cast<int>(paramb.nep_to_sim[g_type[n2]]);
 
-        NEP_FLOAT r12[3] = {
-            g_pos[n2 * 3 + 0] - s_x1[0],
-            g_pos[n2 * 3 + 1] - s_y1[0],
-            g_pos[n2 * 3 + 2] - s_z1[0]
-        };
-
-        NEP_FLOAT d12 = sqrt(r12[0]*r12[0] + r12[1]*r12[1] + r12[2]*r12[2]);
+        const auto displacement = nep_pair_displacement(g_pos + n2 * 3, s_x1, s_y1, s_z1);
+        const NEP_FLOAT d12 = static_cast<NEP_FLOAT>(sqrt(displacement.squared_norm()));
+        NEP_FLOAT r12[3];
+        displacement.store(r12);
         if (d12 > paramb.rc_angular) continue;  // 可选：加 cutoff 检查
 
         NEP_FLOAT fc12, fcp12;
@@ -1368,7 +1398,7 @@ static __global__ void backward_force_3b_dqnl(
   const int* g_NL_angular,
   const int* __restrict__ g_ilist,
   const int* __restrict__ g_type,
-  const NEP_FLOAT* __restrict__ g_pos,
+  const double* __restrict__ g_pos,
   const NEP_FLOAT* __restrict__ g_Fp,
   const NEP_FLOAT* __restrict__ g_charge_derivative,
   const NEP_FLOAT* __restrict__ g_D_real,
@@ -1411,9 +1441,9 @@ static __global__ void backward_force_3b_dqnl(
     }
 
     int t1 = static_cast<int>(paramb.nep_to_sim[g_type[atomi]]);
-    NEP_FLOAT x1 = g_pos[atomi*3  ];
-    NEP_FLOAT y1 = g_pos[atomi*3+1];
-    NEP_FLOAT z1 = g_pos[atomi*3+2];
+    double x1 = g_pos[atomi*3  ];
+    double y1 = g_pos[atomi*3+1];
+    double z1 = g_pos[atomi*3+2];
     int c_start = paramb.sim_num_types * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
     for (int i1 = 0; i1 < g_NN_angular[atomi]; ++i1) {
       int index = i1 * nlocal + atomi;
@@ -1422,8 +1452,10 @@ static __global__ void backward_force_3b_dqnl(
       
       NEP_FLOAT f12[3] = {FLOAT_LIT(0.0)};
       int c_idx_I = t1 * c_start + t2 * paramb.n_max_angular_plus1 * paramb.basis_size_angular_plus1;
-      NEP_FLOAT r12[3] = {g_pos[n2*3] - x1, g_pos[n2*3+1] - y1, g_pos[n2*3+2] - z1};
-      NEP_FLOAT d12 = sqrt(r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2]);
+      const auto displacement = nep_pair_displacement(g_pos + n2 * 3, x1, y1, z1);
+      const NEP_FLOAT d12 = static_cast<NEP_FLOAT>(sqrt(displacement.squared_norm()));
+      NEP_FLOAT r12[3];
+      displacement.store(r12);
       // if (0) printf("3bhalf idx %d atomi %d t1 %d jnums %d n2 %d t2 %d r12 %f fixyz %f %f %f fjxyz %f %f %f\n", n1, atomi, t1, g_NN_angular[atomi], n2, t2, d12, x1, y1, z1, g_pos[n2*3], g_pos[n2*3+1], g_pos[n2*3+2]);
       NEP_FLOAT fc12, fcp12;
       find_fc_and_fcp(paramb.rc_angular, paramb.rcinv_angular, d12, fc12, fcp12);
@@ -1480,7 +1512,7 @@ static __global__ void backward_force_3b_merge(
   const NEP_FLOAT* __restrict__ g_f12y,
   const NEP_FLOAT* __restrict__ g_f12z,
   const int* __restrict__ g_ilist,
-  const NEP_FLOAT* __restrict__ g_pos,
+  const double* __restrict__ g_pos,
   double* g_f,
   double* g_virial)
 {
@@ -1499,16 +1531,16 @@ static __global__ void backward_force_3b_merge(
   NEP_FLOAT s_szy = FLOAT_LIT(0.0);
   if (n1 < N) {
     int atomi = g_ilist[n1];
-    NEP_FLOAT x1 = g_pos[atomi*3  ];
-    NEP_FLOAT y1 = g_pos[atomi*3+1];
-    NEP_FLOAT z1 = g_pos[atomi*3+2];
+    double x1 = g_pos[atomi*3  ];
+    double y1 = g_pos[atomi*3+1];
+    double z1 = g_pos[atomi*3+2];
 
     for (int i1 = 0; i1 < g_NN_angular[atomi]; ++i1) {
       int index = i1 * nlocal + atomi;
       int n2 = g_NL_angular[index];
-      NEP_FLOAT x12 = g_pos[n2*3]   - x1;
-      NEP_FLOAT y12 = g_pos[n2*3+1] - y1;
-      NEP_FLOAT z12 = g_pos[n2*3+2] - z1;
+      const NEP_FLOAT x12 = static_cast<NEP_FLOAT>(g_pos[n2 * 3] - x1);
+      const NEP_FLOAT y12 = static_cast<NEP_FLOAT>(g_pos[n2 * 3 + 1] - y1);
+      const NEP_FLOAT z12 = static_cast<NEP_FLOAT>(g_pos[n2 * 3 + 2] - z1);
 
       NEP_FLOAT r12[3] = {x12, y12, z12};
       NEP_FLOAT f12x = g_f12x[index];
@@ -1700,13 +1732,6 @@ __global__ void copyArrayKernel(double* dest, double* src, int size) {
     
     if (idx < size) {
         dest[idx] = src[idx];
-    }
-}
-
-__global__ void doubleTofloat(NEP_FLOAT* dest, double* src, int size) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < size) {
-        dest[idx] = static_cast<NEP_FLOAT>(src[idx]);
     }
 }
 
@@ -1917,7 +1942,7 @@ static __global__ void backward_force_ZBL(
   const int* g_NL,
   const int* __restrict__ g_ilist,
   const int* __restrict__ g_type,
-  const NEP_FLOAT* __restrict__ g_pos,
+  const double* __restrict__ g_pos,
   const int* __restrict__ g_atomic_numbers,
   const NEP_FLOAT* __restrict__ g_para,
   double* g_f,
@@ -1943,9 +1968,9 @@ static __global__ void backward_force_ZBL(
     NEP_FLOAT s_szx = FLOAT_LIT(0.0);
     NEP_FLOAT s_szy = FLOAT_LIT(0.0);
     int atomi = g_ilist[n1];
-    NEP_FLOAT x1 = g_pos[atomi*3  ];
-    NEP_FLOAT y1 = g_pos[atomi*3+1];
-    NEP_FLOAT z1 = g_pos[atomi*3+2];
+    double x1 = g_pos[atomi*3  ];
+    double y1 = g_pos[atomi*3+1];
+    double z1 = g_pos[atomi*3+2];
     int type1 = g_type[atomi];
     int zi = g_atomic_numbers[type1];
     NEP_FLOAT zi_fp = static_cast<NEP_FLOAT>(zi);
@@ -1953,8 +1978,10 @@ static __global__ void backward_force_ZBL(
     for (int i1 = 0; i1 < g_NN[atomi]; ++i1) {
       int n2 = g_NL[atomi + nlocal * i1];
       int type2 = g_type[n2];
-      NEP_FLOAT r12[3] = {g_pos[n2*3] - x1, g_pos[n2*3+1] - y1, g_pos[n2*3+2] - z1};
-      NEP_FLOAT d12 = sqrt(r12[0] * r12[0] + r12[1] * r12[1] + r12[2] * r12[2]);
+      const auto displacement = nep_pair_displacement(g_pos + n2 * 3, x1, y1, z1);
+      const NEP_FLOAT d12 = static_cast<NEP_FLOAT>(sqrt(displacement.squared_norm()));
+      NEP_FLOAT r12[3];
+      displacement.store(r12);
       NEP_FLOAT d12inv = FLOAT_LIT(1.0) / d12;
       NEP_FLOAT f, fp;
       int zj = g_atomic_numbers[type2];

@@ -187,7 +187,7 @@ __global__ void nepkk_find_structure_factor_charge2(
   const int N,
   const int num_kpoints,
   const NEP_FLOAT* g_charge,
-  const NEP_FLOAT* g_pos,
+  const double* g_pos,
   const NEP_FLOAT* g_kx,
   const NEP_FLOAT* g_ky,
   const NEP_FLOAT* g_kz,
@@ -199,7 +199,7 @@ __global__ void nepkk_find_structure_factor_charge2(
     NEP_FLOAT S_real = FLOAT_LIT(0.0);
     NEP_FLOAT S_imag = FLOAT_LIT(0.0);
     for (int n = 0; n < N; ++n) {
-      const NEP_FLOAT kr = g_kx[nk] * g_pos[n * 3] + g_ky[nk] * g_pos[n * 3 + 1] + g_kz[nk] * g_pos[n * 3 + 2];
+      const NEP_FLOAT kr = static_cast<NEP_FLOAT>(g_kx[nk] * g_pos[n * 3] + g_ky[nk] * g_pos[n * 3 + 1] + g_kz[nk] * g_pos[n * 3 + 2]);
       const NEP_FLOAT q = g_charge[n];
       S_real += q * cos(kr);
       S_imag -= q * sin(kr);
@@ -214,7 +214,7 @@ __global__ void nepkk_find_force_charge_reciprocal_space_charge2(
   const int num_kpoints,
   const NEP_FLOAT alpha_factor,
   const NEP_FLOAT* g_charge,
-  const NEP_FLOAT* g_pos,
+  const double* g_pos,
   const NEP_FLOAT* g_kx,
   const NEP_FLOAT* g_ky,
   const NEP_FLOAT* g_kz,
@@ -238,7 +238,7 @@ __global__ void nepkk_find_force_charge_reciprocal_space_charge2(
       const NEP_FLOAT kx = g_kx[nk];
       const NEP_FLOAT ky = g_ky[nk];
       const NEP_FLOAT kz = g_kz[nk];
-      const NEP_FLOAT kr = kx * g_pos[n * 3] + ky * g_pos[n * 3 + 1] + kz * g_pos[n * 3 + 2];
+      const NEP_FLOAT kr = static_cast<NEP_FLOAT>(kx * g_pos[n * 3] + ky * g_pos[n * 3 + 1] + kz * g_pos[n * 3 + 2]);
       const NEP_FLOAT G = g_G[nk];
       const NEP_FLOAT S_real = g_S_real[nk];
       const NEP_FLOAT S_imag = g_S_imag[nk];
@@ -346,7 +346,7 @@ inline void nepkk_ewald_find_force_charge2(
   const NEP_FLOAT alpha_factor,
   const NEPKK_Box& box,
   const GPU_Vector<NEP_FLOAT>& charge,
-  const GPU_Vector<NEP_FLOAT>& position,
+  const double* position,
   GPU_Vector<int>& num_kpoints,
   GPU_Vector<NEP_FLOAT>& kx,
   GPU_Vector<NEP_FLOAT>& ky,
@@ -369,7 +369,7 @@ inline void nepkk_ewald_find_force_charge2(
     alpha, alpha_factor, box, num_kpoints, kx, ky, kz, G, S_real, S_imag);
   const int k_grid_size = (cpu_num_kpoints - 1) / block_size + 1;
   nepkk_find_structure_factor_charge2<<<k_grid_size, block_size>>>(
-    N, cpu_num_kpoints, charge.data(), position.data(), kx.data(), ky.data(), kz.data(), S_real.data(), S_imag.data());
+    N, cpu_num_kpoints, charge.data(), position, kx.data(), ky.data(), kz.data(), S_real.data(), S_imag.data());
   CUDA_CHECK_KERNEL
 
   if (mpi_size > 1 && cpu_num_kpoints > 0) {
@@ -398,7 +398,7 @@ inline void nepkk_ewald_find_force_charge2(
     cpu_num_kpoints,
     alpha_factor,
     charge.data(),
-    position.data(),
+    position,
     kx.data(),
     ky.data(),
     kz.data(),

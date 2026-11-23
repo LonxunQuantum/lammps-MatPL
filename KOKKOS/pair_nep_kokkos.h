@@ -129,6 +129,9 @@ class PairNEPKokkos : public PairNEP {
   int rank, device_id;
   std::vector<double> h_etot_virial_global;
   ReverseCommMode reverse_comm_mode = REVERSE_NONE;
+  bool preserve_bec_positions = false;
+  bool has_bec_position_snapshot = false;
+  GPU_Vector<double> bec_positions;
   std::vector<double> h_bec_reverse;
   std::vector<NEP_FLOAT> h_bec_nep_float;
   // NEP data structures - Kokkos Views for raw pointers

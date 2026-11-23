@@ -638,7 +638,6 @@ void NEPKK::reset_nep_data(int inum, int nlocal, int nall, int vflag_either) {
 
   if (max_nall < nall) {
     max_nall = nall;
-    lmp_data.position.resize(max_nall*3);
     lmp_data.type.resize(max_nall);
     const int virial_reduce_threads = 256;
     const int virial_reduce_blocks = (max_nall + virial_reduce_threads - 1) / virial_reduce_threads;
@@ -834,7 +833,8 @@ void NEPKK::compute_bec(
     int num_neighbors,
     const int* ilist,
     const int* numneigh,
-    const int* firstneigh)
+    const int* firstneigh,
+    const double* position)
 {
   if (paramb.charge_mode != 2) return;
 
@@ -861,7 +861,7 @@ void NEPKK::compute_bec(
     annmb,
     ilist,
     lmp_data.type.data(),
-    lmp_data.position.data(),
+    position,
     nep_data.charge_derivative.data(),
     nep_data.bec.data());
   CUDA_CHECK_KERNEL
@@ -876,7 +876,7 @@ void NEPKK::compute_bec(
     annmb,
     ilist,
     lmp_data.type.data(),
-    lmp_data.position.data(),
+    position,
     nep_data.charge_derivative.data(),
     nep_data.sum_fxyz.data(),
     nep_data.bec.data());
@@ -914,7 +914,7 @@ void NEPKK::compute(
     int* ilist,                 // atom i list
     int* numneigh,              // the neighbor nums of each i, [inum]
     int* firstneigh,            // the neighbor list of each i, [inum * NM]
-    double* position,           // postion of atoms x, [n_all * 3]
+    const double* position,     // LAMMPS device coordinates, [n_all * 3]
     double* potential_per_atom_lmp,  // the output of ei
     double* potential_per_atom_copy, // the output of ei
     double* force_per_atom_lmp,      // the output of force
@@ -976,12 +976,6 @@ void NEPKK::compute(
   box.hi[7] = (box.h[1] * box.h[6] - box.h[0] * box.h[7]) / det;
   box.hi[8] = (box.h[0] * box.h[4] - box.h[1] * box.h[3]) / det;
 
-  // 将double的原子坐标转换为float32 or 64
-  doubleTofloat<<<(nall*3 + BLOCK_SIZE256 - 1) / BLOCK_SIZE256, BLOCK_SIZE256>>>(
-    lmp_data.position.data(), 
-    position, 
-    nall*3);
-  CUDA_CHECK_KERNEL
   // 做元素类型映射，在lammps中允许输入结构的元素类型顺序与力场中不一致，需要做调整
   // 如力场结构顺序为 O Hf分别对应0 1，而输入结构顺序为 Hf O 分别对应 1 0，需要做映射
   // 这里将原子的类型映射回在力场文件中的位置
@@ -1015,7 +1009,7 @@ void NEPKK::compute(
       nep_data.NL_angular.data(),
       ilist,
       lmp_data.type.data(),
-      lmp_data.position.data(),
+      position,
       nep_data.Fp.data()); //临时存储特征值
     CUDA_CHECK_KERNEL
   } else {// 不使用共享内存的版本，系数C直接从全局内存中读取
@@ -1032,7 +1026,7 @@ void NEPKK::compute(
       nep_data.NL_angular.data(),
       ilist,
       lmp_data.type.data(),
-      lmp_data.position.data(),
+      position,
       nep_data.Fp.data()); //临时存储特征值
     CUDA_CHECK_KERNEL    
   }
@@ -1058,7 +1052,7 @@ void NEPKK::compute(
       nep_data.NL_angular.data(),
       ilist,
       lmp_data.type.data(),
-      lmp_data.position.data(),
+      position,
       nep_data.Fp.data(),
       nep_data.sum_fxyz.data());
     CUDA_CHECK_KERNEL
@@ -1072,7 +1066,7 @@ void NEPKK::compute(
       nep_data.NL_angular.data(),
       ilist,
       lmp_data.type.data(),
-      lmp_data.position.data(),
+      position,
       nep_data.Fp.data(),
       nep_data.sum_fxyz.data());
     CUDA_CHECK_KERNEL
@@ -1129,7 +1123,7 @@ void NEPKK::compute(
         paramb.pppm_mesh_mode,
         paramb.pppm_mesh,
         nep_data.charge,
-        lmp_data.position,
+        position,
         nep_data.D_real,
         force_per_atom,
         cv_per_atom,
@@ -1149,7 +1143,7 @@ void NEPKK::compute(
         paramb.charge_alpha_factor,
         box,
         nep_data.charge,
-        lmp_data.position,
+        position,
         nep_data.num_kpoints,
         nep_data.kx,
         nep_data.ky,
@@ -1201,7 +1195,7 @@ void NEPKK::compute(
         firstneigh,
         ilist,
         lmp_data.type.data(),
-        lmp_data.position.data(),
+        position,
         nep_data.Fp.data(),
         force_per_atom,
         cv_per_atom
@@ -1230,7 +1224,7 @@ void NEPKK::compute(
         firstneigh,
         ilist,
         lmp_data.type.data(),
-        lmp_data.position.data(),
+        position,
         nep_data.Fp.data(),
         nep_data.charge_derivative.data(),
         nep_data.D_real.data(),
@@ -1253,7 +1247,7 @@ void NEPKK::compute(
         firstneigh,
         ilist,
         lmp_data.type.data(),
-        lmp_data.position.data(),
+        position,
         nep_data.Fp.data(),
         force_per_atom,
         cv_per_atom
@@ -1278,7 +1272,7 @@ void NEPKK::compute(
       nep_data.NL_angular.data(),
       ilist,
       lmp_data.type.data(),
-      lmp_data.position.data(),
+      position,
       nep_data.Fp.data(),
       nep_data.charge_derivative.data(),
       nep_data.D_real.data(),
@@ -1303,7 +1297,7 @@ void NEPKK::compute(
     nep_data.f12y.data(),
     nep_data.f12z.data(),
     ilist,
-    lmp_data.position.data(),
+    position,
     force_per_atom,
     cv_per_atom);
   CUDA_CHECK_KERNEL
@@ -1328,7 +1322,7 @@ void NEPKK::compute(
       nep_data.NL_angular.data(),
       ilist,
       lmp_data.type.data(),
-      lmp_data.position.data(),
+      position,
       zbl.atomic_numbers.data(),
       zbl.para.data(),
       force_per_atom,
